@@ -615,19 +615,27 @@ input, textarea {
     z-index: 2;
 }
 
+/* Стили для сообщений друг другу в голосовом чате (добавлено) */
 .discord-messages-area {
-    height: 150px;
-    border-top: 1px solid var(--border-color);
-    padding: 10px 15px;
-    overflow-y: auto;
+    flex: 1;
+    background: rgba(12, 12, 15, 0.6);
+    border-radius: 12px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.15);
+    gap: 8px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
 }
 
 .discord-msg-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+    border-radius: 10px;
     font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
 }
 
 .discord-input-box {

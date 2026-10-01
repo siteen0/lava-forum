@@ -39,7 +39,7 @@ window.onload = async function() {
     // Загружаем посты и пользователей из облака Supabase
     await syncDataFromSupabase();
 
-    // Подписываемся на мгновенные обновления в реальном времени со всего мира
+    // Подписываемся на мгновенные обновления в реальном времени со всго мира
     supabaseClient
         .channel('public:forum_state')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_data' }, payload => {
@@ -54,6 +54,18 @@ window.onload = async function() {
                     }
                     if (cloudData.users) {
                         users = cloudData.users;
+                    }
+                    if (cloudData.voiceChatMessages) {
+                        voiceChatMessages = cloudData.voiceChatMessages;
+                        if (activeVoiceChannel) renderVoiceChatMessages();
+                    }
+                    // Синхронизация участников в голосовых каналах в реальном времени
+                    if (cloudData.usersInVoice) {
+                        usersInVoice = cloudData.usersInVoice;
+                        if (currentView === 'voiceView') {
+                            renderVoiceChannels();
+                            if (activeVoiceChannel) renderVoiceGrid();
+                        }
                     }
                 } catch(e) { console.error(e); }
             }
@@ -83,8 +95,9 @@ async function syncDataFromSupabase() {
             const parsed = JSON.parse(data.data);
             if (parsed.posts) posts = parsed.posts;
             if (parsed.users) users = parsed.users;
+            if (parsed.voiceChatMessages) voiceChatMessages = parsed.voiceChatMessages;
+            if (parsed.usersInVoice) usersInVoice = parsed.usersInVoice;
         } else {
-            // Если строки еще нет в таблице, инициализируем
             posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
             await saveDataToSupabase();
         }
@@ -99,7 +112,7 @@ async function saveDataToSupabase() {
     localStorage.setItem('lava_posts', JSON.stringify(posts));
     localStorage.setItem('lava_users', JSON.stringify(users));
 
-    const payload = JSON.stringify({ posts, users });
+    const payload = JSON.stringify({ posts, users, voiceChatMessages, usersInVoice });
     try {
         await supabaseClient
             .from('forum_data')
@@ -811,6 +824,10 @@ async function joinVoiceChannel(channelId) {
     });
 
     activeVoiceChannel = channelId;
+    
+    // Сохраняем состояние в Supabase, чтобы другие пользователи сразу увидели вас в канале
+    saveDataToSupabase();
+
     const channelObj = voiceChannelsData.find(c => c.id === channelId);
     document.getElementById('activeVoiceHeader').textContent = `# ${channelObj.name}`;
 
@@ -835,6 +852,9 @@ function disconnectVoice() {
 
     usersInVoice[activeVoiceChannel] = usersInVoice[activeVoiceChannel].filter(u => u.id !== currentUser.id);
     activeVoiceChannel = null;
+
+    // Сохраняем изменения в Supabase после выхода из канала
+    saveDataToSupabase();
 
     document.getElementById('voiceGridArea').style.display = 'none';
     document.getElementById('discordVoiceBar').style.display = 'none';
@@ -971,6 +991,8 @@ function sendVoiceMessage() {
     if (!text) return;
     if (!voiceChatMessages[activeVoiceChannel]) voiceChatMessages[activeVoiceChannel] = [];
     voiceChatMessages[activeVoiceChannel].push({ author: currentUser.username, text });
+    
+    saveDataToSupabase(); 
     input.value = '';
     renderVoiceChatMessages();
 }
@@ -1003,6 +1025,7 @@ function adminToggleUserMic() {
     const u = usersInVoice[activeVoiceChannel].find(user => user.id === selectedVoiceUser.id);
     if (u) {
         u.adminMuted = !u.adminMuted;
+        saveDataToSupabase();
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
@@ -1016,6 +1039,7 @@ function adminToggleUserSound() {
     const u = usersInVoice[activeVoiceChannel].find(user => user.id === selectedVoiceUser.id);
     if (u) {
         u.adminDeafened = !u.adminDeafened;
+        saveDataToSupabase();
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
