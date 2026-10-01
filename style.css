@@ -23,7 +23,6 @@ body {
     display: flex;
     flex-direction: column;
     position: relative;
-    caret-color: transparent; 
 }
 
 input, textarea {
@@ -371,7 +370,6 @@ input, textarea {
     border: 1px solid var(--border-color);
     border-radius: 14px;
     padding: 18px;
-    user-select: none;
 }
 
 .post-head {

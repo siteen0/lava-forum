@@ -1,3 +1,8 @@
+// Настройка Supabase
+const SUPABASE_URL = 'https://dveuaxwmdwblimcuxukg.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_1SjRmI6uwWUI7C_aRZ9Cvw_kWywHFaq';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 let currentUser = null;
 let currentView = 'forumView';
 let currentFilter = 'latest';
@@ -13,67 +18,100 @@ let voiceChatMessages = {};
 let localStream = null;
 let contextMenuPostId = null;
 
-// Аудио контекст и анализатор речи
 let audioCtx = null;
 let analyser = null;
 let micSource = null;
 let isSpeakingState = false;
 
-// SoundCloud Плеер
 let tracks = [];
 let currentIndex = -1;
 let widget = null;
 
-// Посты и пользователи
-let posts = JSON.parse(localStorage.getItem('lava_posts')) ||[cite: 26];
-let users = JSON.parse(localStorage.getItem('lava_users')) ||[cite: 26];
+let posts = [];
+let users = JSON.parse(localStorage.getItem('lava_users')) || [];
 
-window.onload = function() {
+window.onload = async function() {
     loadUserFromStorage();
-    renderPosts();
-    renderVoiceChannels();
     initLavaDrips();
     initActivityTracking(); 
     initVoiceXpTimer();     
+
+    // Загружаем посты и пользователей из облака Supabase
+    await syncDataFromSupabase();
+
+    // Подписываемся на мгновенные обновления в реальном времени со всего мира
+    supabaseClient
+        .channel('public:forum_state')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_data' }, payload => {
+            if (payload.new && payload.new.data) {
+                try {
+                    const cloudData = JSON.parse(payload.new.data);
+                    if (cloudData.posts) {
+                        posts = cloudData.posts;
+                        renderPosts();
+                        if (currentView === 'likedView') renderLikedPosts();
+                        if (currentView === 'profileView' && currentUser) showProfileView(currentUser.id);
+                    }
+                    if (cloudData.users) {
+                        users = cloudData.users;
+                    }
+                } catch(e) { console.error(e); }
+            }
+        })
+        .subscribe();
 
     const volBar = document.getElementById('volumeBar');
     if (volBar) {
         changeVolume(volBar.value);
     }
 
-    // Синхронизация данных между вкладками браузера через localStorage
-    window.addEventListener('storage', (event) => {
-        if (event.key === 'lava_posts') {
-            posts = JSON.parse(event.newValue) || [];
-            renderPosts();
-            if (currentView === 'likedView') renderLikedPosts();
-            if (currentView === 'profileView' && currentUser) showProfileView(currentUser.id);
-        }
-        if (event.key === 'lava_users') {
-            users = JSON.parse(event.newValue) || [];
-        }
-        if (event.key === 'lava_current_user') {
-            currentUser = event.newValue ? JSON.parse(event.newValue) : null;
-            updateHeaderAndSidebar();
-            if (currentView === 'likedView') renderLikedPosts();
-        }
-    });
-
     document.addEventListener('click', () => {
         const menu = document.getElementById('postContextMenu');
         if (menu) menu.style.display = 'none';
     });
-
-    document.addEventListener('mousedown', (e) => {
-        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-            setTimeout(() => {
-                if (document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                    document.activeElement.blur();
-                }
-            }, 0);
-        }
-    });
 };
+
+async function syncDataFromSupabase() {
+    try {
+        let { data, error } = await supabaseClient
+            .from('forum_data')
+            .select('*')
+            .eq('id', 1)
+            .single();
+
+        if (data && data.data) {
+            const parsed = JSON.parse(data.data);
+            if (parsed.posts) posts = parsed.posts;
+            if (parsed.users) users = parsed.users;
+        } else {
+            // Если строки еще нет в таблице, инициализируем
+            posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
+            await saveDataToSupabase();
+        }
+    } catch (err) {
+        console.warn("Offline mode / fallback to local storage:", err);
+        posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
+    }
+    renderPosts();
+}
+
+async function saveDataToSupabase() {
+    localStorage.setItem('lava_posts', JSON.stringify(posts));
+    localStorage.setItem('lava_users', JSON.stringify(users));
+
+    const payload = JSON.stringify({ posts, users });
+    try {
+        await supabaseClient
+            .from('forum_data')
+            .upsert({ id: 1, data: payload });
+    } catch (e) {
+        console.error("Supabase save error:", e);
+    }
+}
+
+function saveData() {
+    saveDataToSupabase();
+}
 
 function openAdminModal() {
     document.getElementById('adminLoginInput').value = '';
@@ -259,11 +297,6 @@ function initLavaDrips() {
 
         container.appendChild(drip);
     }
-}
-
-function saveData() {
-    localStorage.setItem('lava_posts', JSON.stringify(posts));
-    localStorage.setItem('lava_users', JSON.stringify(users));
 }
 
 function loadUserFromStorage() {
@@ -1209,7 +1242,6 @@ function confirmRecoveryCode() {
     showToast("Почта успешно подтверждена! Теперь можно войти.");
 }
 
-// --- SOUNDCLOUD ПЛЕЕР ---
 function addTrack() {
     const input = document.getElementById("url");
     const error = document.getElementById("error");

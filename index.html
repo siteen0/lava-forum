@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LAVA Forum</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Подключаем официальную библиотеку Supabase JS из CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -177,11 +179,9 @@
         <div class="modal-window">
             <h3 id="authTitle">Авторизация</h3>
             <input type="text" id="authUsername" placeholder="Имя пользователя">
-            <!-- Поле почты (видно только при регистрации) -->
             <input type="email" id="authEmail" placeholder="Почта (@gmail.com)" style="display:none;">
             <input type="password" id="authPassword" placeholder="Пароль">
             <div class="modal-buttons" style="display: flex; align-items: center; justify-content: space-between;">
-                <!-- Шестеренка «Забыл пароль» (появляется слева только если пользователь залогинен) -->
                 <button id="authGearBtn" class="gear-btn" onclick="openForgotPasswordModal()" style="display:none;" title="Забыли пароль?">⚙</button>
                 <div style="display: flex; gap: 8px; margin-left: auto;">
                     <button class="orange-button" onclick="submitAuth()">Подтвердить</button>
@@ -344,7 +344,7 @@
     <div class="modal-overlay" id="systemModal">
         <div class="modal-window">
             <h3>Системная информация</h3>
-            <p style="font-size:13px; color:var(--muted); line-height:1.5;">LAVA Hub v3.0. Посты в профилях блоками и постоянное сохранение в «Понравившееся».</p>
+            <p style="font-size:13px; color:var(--muted); line-height:1.5;">LAVA Hub v3.1. Онлайн синхронизация через Supabase Realtime.</p>
             <div class="modal-buttons" style="margin-top:15px;">
                 <button onclick="closeModal('systemModal')">Закрыть</button>
             </div>
