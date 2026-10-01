@@ -25,8 +25,8 @@ let currentIndex = -1;
 let widget = null;
 
 // Посты и пользователи
-let posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
-let users = JSON.parse(localStorage.getItem('lava_users')) || [];
+let posts = JSON.parse(localStorage.getItem('lava_posts')) ||[cite: 26];
+let users = JSON.parse(localStorage.getItem('lava_users')) ||[cite: 26];
 
 window.onload = function() {
     loadUserFromStorage();
@@ -40,6 +40,24 @@ window.onload = function() {
     if (volBar) {
         changeVolume(volBar.value);
     }
+
+    // Синхронизация данных между вкладками браузера через localStorage
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'lava_posts') {
+            posts = JSON.parse(event.newValue) || [];
+            renderPosts();
+            if (currentView === 'likedView') renderLikedPosts();
+            if (currentView === 'profileView' && currentUser) showProfileView(currentUser.id);
+        }
+        if (event.key === 'lava_users') {
+            users = JSON.parse(event.newValue) || [];
+        }
+        if (event.key === 'lava_current_user') {
+            currentUser = event.newValue ? JSON.parse(event.newValue) : null;
+            updateHeaderAndSidebar();
+            if (currentView === 'likedView') renderLikedPosts();
+        }
+    });
 
     document.addEventListener('click', () => {
         const menu = document.getElementById('postContextMenu');
@@ -390,7 +408,7 @@ function deletePostImage(postId) {
         saveData();
         renderPosts();
         if (currentView === 'profileView') showProfileView(post.authorId);
-        showToast("🛡️️ Картинка поста удалена админом");
+        showToast("🛡 Картинка поста удалена админом");
     }
 }
 
@@ -968,7 +986,7 @@ function adminToggleUserSound() {
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
-        showToast(`🛡️️ Звук ${selectedVoiceUser.name} ${u.adminDeafened ? 'выключен' : 'включен'}`);
+        showToast(`🛡 Звук ${selectedVoiceUser.name} ${u.adminDeafened ? 'выключен' : 'включен'}`);
     }
 }
 
@@ -1103,10 +1121,9 @@ function openAuth(mode) {
 
     if (mode === 'register') {
         emailInput.style.display = 'block';
-        gearBtn.style.display = 'none'; // Шестеренка появляется только при входе, когда юзер уже в аккаунте
+        gearBtn.style.display = 'none'; 
     } else {
         emailInput.style.display = 'none';
-        // Показываем шестеренку только если кто-то залогинен в системе
         gearBtn.style.display = currentUser ? 'flex' : 'none';
     }
 
