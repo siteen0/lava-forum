@@ -1,4 +1,7 @@
-// Настройка Supabase
+// ==========================================
+// LAVA Forum — script.js (Supabase edition)
+// ==========================================
+
 const SUPABASE_URL = 'https://dveuaxwmdwblimcuxukg.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_1SjRmI6uwWUI7C_aRZ9Cvw_kWywHFaq';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -28,54 +31,43 @@ let currentIndex = -1;
 let widget = null;
 
 let posts = [];
-let users = JSON.parse(localStorage.getItem('lava_users')) || [];
+let users = [];
+
+// ==========================================
+// ЗАГРУЗКА / СОХРАНЕНИЕ
+// ==========================================
 
 window.onload = async function() {
     loadUserFromStorage();
     initLavaDrips();
-    initActivityTracking(); 
-    initVoiceXpTimer();     
+    initActivityTracking();
+    initVoiceXpTimer();
 
-    // Загружаем посты и пользователей из облака Supabase
-    await syncDataFromSupabase();
+    await loadUsersFromSupabase();
+    await loadPostsFromSupabase();
 
-    // Подписываемся на мгновенные обновления в реальном времени со всго мира
+    // Realtime: посты
     supabaseClient
-        .channel('public:forum_state')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_data' }, payload => {
-            if (payload.new && payload.new.data) {
-                try {
-                    const cloudData = JSON.parse(payload.new.data);
-                    if (cloudData.posts) {
-                        posts = cloudData.posts;
-                        renderPosts();
-                        if (currentView === 'likedView') renderLikedPosts();
-                        if (currentView === 'profileView' && currentUser) showProfileView(currentUser.id);
-                    }
-                    if (cloudData.users) {
-                        users = cloudData.users;
-                    }
-                    if (cloudData.voiceChatMessages) {
-                        voiceChatMessages = cloudData.voiceChatMessages;
-                        if (activeVoiceChannel) renderVoiceChatMessages();
-                    }
-                    // Синхронизация участников в голосовых каналах в реальном времени
-                    if (cloudData.usersInVoice) {
-                        usersInVoice = cloudData.usersInVoice;
-                        if (currentView === 'voiceView') {
-                            renderVoiceChannels();
-                            if (activeVoiceChannel) renderVoiceGrid();
-                        }
-                    }
-                } catch(e) { console.error(e); }
+        .channel('posts-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, payload => {
+            handlePostRealtime(payload);
+        })
+        .subscribe();
+
+    // Realtime: пользователи
+    supabaseClient
+        .channel('users-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
+            if (payload.new && payload.new.id) {
+                const idx = users.findIndex(u => u.id === payload.new.id);
+                const u = rowToUser(payload.new);
+                if (idx > -1) users[idx] = u; else users.push(u);
             }
         })
         .subscribe();
 
     const volBar = document.getElementById('volumeBar');
-    if (volBar) {
-        changeVolume(volBar.value);
-    }
+    if (volBar) changeVolume(volBar.value);
 
     document.addEventListener('click', () => {
         const menu = document.getElementById('postContextMenu');
@@ -83,48 +75,166 @@ window.onload = async function() {
     });
 };
 
-async function syncDataFromSupabase() {
-    try {
-        let { data, error } = await supabaseClient
-            .from('forum_data')
-            .select('*')
-            .eq('id', 1)
-            .single();
+function rowToUser(row) {
+    return {
+        id: row.id,
+        username: row.username,
+        email: row.email || '',
+        password: row.password || '',
+        avatar: row.avatar || '',
+        banner: row.banner || '',
+        xp: row.xp || 0,
+        level: row.level || 1,
+        isAdmin: !!row.is_admin,
+        lastActive: row.last_active || 0,
+        likedPostIds: row.liked_post_ids || []
+    };
+}
 
-        if (data && data.data) {
-            const parsed = JSON.parse(data.data);
-            if (parsed.posts) posts = parsed.posts;
-            if (parsed.users) users = parsed.users;
-            if (parsed.voiceChatMessages) voiceChatMessages = parsed.voiceChatMessages;
-            if (parsed.usersInVoice) usersInVoice = parsed.usersInVoice;
-        } else {
-            posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
-            await saveDataToSupabase();
-        }
-    } catch (err) {
-        console.warn("Offline mode / fallback to local storage:", err);
+function userToRow(u) {
+    return {
+        id: u.id,
+        username: u.username,
+        email: u.email || '',
+        password: u.password || '',
+        avatar: u.avatar || '',
+        banner: u.banner || '',
+        xp: u.xp || 0,
+        level: u.level || 1,
+        is_admin: !!u.isAdmin,
+        last_active: u.lastActive || Date.now(),
+        liked_post_ids: u.likedPostIds || []
+    };
+}
+
+async function loadUsersFromSupabase() {
+    try {
+        const { data, error } = await supabaseClient.from('users').select('*');
+        if (error) throw error;
+        users = (data || []).map(rowToUser);
+    } catch (e) {
+        console.warn('users load error, fallback local', e);
+        users = JSON.parse(localStorage.getItem('lava_users')) || [];
+    }
+}
+
+async function loadPostsFromSupabase() {
+    try {
+        const { data, error } = await supabaseClient
+            .from('posts')
+            .select('*')
+            .order('id', { ascending: false });
+        if (error) throw error;
+        posts = (data || []).map(rowToPost);
+    } catch (e) {
+        console.warn('posts load error, fallback local', e);
         posts = JSON.parse(localStorage.getItem('lava_posts')) || [];
     }
     renderPosts();
 }
 
-async function saveDataToSupabase() {
-    localStorage.setItem('lava_posts', JSON.stringify(posts));
-    localStorage.setItem('lava_users', JSON.stringify(users));
+function rowToPost(row) {
+    return {
+        id: row.id,
+        title: row.title || '',
+        text: row.text || '',
+        author: row.author || '',
+        authorId: row.authorid || '',
+        avatar: row.avatar || '',
+        date: row.date || '',
+        likes: row.likes || 0,
+        likedBy: row.likedby || [],
+        comments: row.comments || [],
+        media: row.media || ''
+    };
+}
 
-    const payload = JSON.stringify({ posts, users, voiceChatMessages, usersInVoice });
+function postToRow(p) {
+    return {
+        title: p.title,
+        text: p.text,
+        author: p.author,
+        authorid: p.authorId,
+        avatar: p.avatar,
+        date: p.date,
+        likes: p.likes,
+        likedby: p.likedBy || [],
+        comments: p.comments || [],
+        media: p.media || ''
+    };
+}
+
+function handlePostRealtime(payload) {
+    const evt = payload.eventType;
+    if (evt === 'INSERT' || evt === 'UPDATE') {
+        if (!payload.new) return;
+        const incoming = rowToPost(payload.new);
+        const idx = posts.findIndex(p => p.id === incoming.id);
+        if (idx > -1) posts[idx] = incoming;
+        else posts.unshift(incoming);
+    } else if (evt === 'DELETE') {
+        if (payload.old && payload.old.id) posts = posts.filter(p => p.id !== payload.old.id);
+    }
+    renderPosts();
+    if (currentView === 'likedView') renderLikedPosts();
+    if (currentView === 'profileView' && currentUser) showProfileView(currentUser.id);
+}
+
+async function savePostToSupabase(post) {
+    localStorage.setItem('lava_posts', JSON.stringify(posts));
     try {
-        await supabaseClient
-            .from('forum_data')
-            .upsert({ id: 1, data: payload });
+        // Временный id — значит INSERT
+        if (!post.id || post.id > 1e12) {
+            const { data, error } = await supabaseClient
+                .from('posts')
+                .insert(postToRow(post))
+                .select()
+                .single();
+            if (error) throw error;
+            if (data) {
+                const real = rowToPost(data);
+                const idx = posts.findIndex(p => p.id === post.id);
+                if (idx > -1) posts[idx] = real;
+            }
+        } else {
+            const { error } = await supabaseClient
+                .from('posts')
+                .update(postToRow(post))
+                .eq('id', post.id);
+            if (error) throw error;
+        }
     } catch (e) {
-        console.error("Supabase save error:", e);
+        console.error('savePost error:', e);
     }
 }
 
-function saveData() {
-    saveDataToSupabase();
+async function deletePostFromSupabase(postId) {
+    try {
+        await supabaseClient.from('posts').delete().eq('id', postId);
+    } catch (e) {
+        console.error('deletePost error:', e);
+    }
 }
+
+async function saveUserToSupabase(user) {
+    try {
+        await supabaseClient.from('users').upsert(userToRow(user));
+        localStorage.setItem('lava_users', JSON.stringify(users));
+    } catch (e) {
+        console.error('saveUser error:', e);
+    }
+}
+
+// Заглушка на случай, если где-то в старом коде остался вызов saveData()
+function saveData() {
+    localStorage.setItem('lava_posts', JSON.stringify(posts));
+    localStorage.setItem('lava_users', JSON.stringify(users));
+}
+function saveDataToSupabase() { saveData(); }
+
+// ==========================================
+// АДМИН
+// ==========================================
 
 function openAdminModal() {
     document.getElementById('adminLoginInput').value = '';
@@ -132,33 +242,30 @@ function openAdminModal() {
     openModal('adminModal');
 }
 
-function submitAdminAuth() {
+async function submitAdminAuth() {
     const login = document.getElementById('adminLoginInput').value.trim();
     const pass = document.getElementById('adminPassInput').value.trim();
 
     if (login === 'adminss' && pass === '0992166') {
         if (!currentUser) {
-            currentUser = { 
-                id: 'admin_usr_' + Date.now(), 
-                username: 'Admin', 
+            currentUser = {
+                id: 'admin_usr_' + Date.now(),
+                username: 'Admin',
                 email: 'admin@gmail.com',
-                avatar: '', 
-                banner: '', 
-                lastActive: Date.now(), 
-                xp: 500, 
-                level: 99, 
-                likedPostIds: [], 
-                isAdmin: true 
+                avatar: '', banner: '',
+                lastActive: Date.now(),
+                xp: 500, level: 99,
+                likedPostIds: [],
+                isAdmin: true
             };
+            users.push(currentUser);
         } else {
             currentUser.isAdmin = true;
+            const idx = users.findIndex(u => u.id === currentUser.id);
+            if (idx > -1) users[idx] = currentUser;
         }
-
-        users = users.map(u => u.id === currentUser.id ? currentUser : u);
-        if (!users.find(u => u.id === currentUser.id)) users.push(currentUser);
-
         localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
-        saveData();
+        await saveUserToSupabase(currentUser);
         updateHeaderAndSidebar();
         closeModal('adminModal');
         showToast("🛡️ Вы авторизовались как Администратор!");
@@ -169,18 +276,22 @@ function submitAdminAuth() {
     }
 }
 
-function exitAdminMode() {
-    if (currentUser) {
-        currentUser.isAdmin = false;
-        users = users.map(u => u.id === currentUser.id ? currentUser : u);
-        localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
-        saveData();
-        updateHeaderAndSidebar();
-        renderPosts();
-        if (currentView === 'profileView') showProfileView(currentUser.id);
-        showToast("Вы вышли из админ режима");
-    }
+async function exitAdminMode() {
+    if (!currentUser) return;
+    currentUser.isAdmin = false;
+    const idx = users.findIndex(u => u.id === currentUser.id);
+    if (idx > -1) users[idx] = currentUser;
+    localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
+    await saveUserToSupabase(currentUser);
+    updateHeaderAndSidebar();
+    renderPosts();
+    if (currentView === 'profileView') showProfileView(currentUser.id);
+    showToast("Вы вышли из админ режима");
 }
+
+// ==========================================
+// XP / АКТИВНОСТЬ
+// ==========================================
 
 function addXp(amount, showNotification = false) {
     if (!currentUser) return;
@@ -188,29 +299,25 @@ function addXp(amount, showNotification = false) {
     if (!currentUser.level) currentUser.level = 1;
 
     currentUser.xp += amount;
-
     while (currentUser.xp >= 100) {
         currentUser.xp -= 100;
         currentUser.level += 1;
         showToast(`🎉 Поздравляем! Уровень повышен до ${currentUser.level}!`);
     }
 
-    users = users.map(u => u.id === currentUser.id ? currentUser : u);
+    const idx = users.findIndex(u => u.id === currentUser.id);
+    if (idx > -1) users[idx] = currentUser;
     localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
-    saveData();
+    saveUserToSupabase(currentUser);
     updateHeaderAndSidebar();
-    
-    if (showNotification) {
-        showXpPopup();
-    }
+
+    if (showNotification) showXpPopup();
 }
 
 function initVoiceXpTimer() {
     setInterval(() => {
-        if (currentUser && activeVoiceChannel) {
-            addXp(15, false); 
-        }
-    }, 5 * 60 * 1000); 
+        if (currentUser && activeVoiceChannel) addXp(15, false);
+    }, 5 * 60 * 1000);
 }
 
 let xpPopupTimeout = null;
@@ -218,34 +325,22 @@ function showXpPopup() {
     const popup = document.getElementById('xpPopup');
     const fill = document.getElementById('xpBarFill');
     const title = document.getElementById('xpPopupTitle');
-    
-    let currentLevel = currentUser ? (currentUser.level || 1) : 1;
-    let currentXp = currentUser ? (currentUser.xp || 0) : 0;
-    
-    title.textContent = `Ваш уровень: ${currentLevel} (${currentXp}/100 XP)`;
-    fill.style.width = `${currentXp}%`;
-
+    const lvl = currentUser ? (currentUser.level || 1) : 1;
+    const xp = currentUser ? (currentUser.xp || 0) : 0;
+    title.textContent = `Ваш уровень: ${lvl} (${xp}/100 XP)`;
+    fill.style.width = `${xp}%`;
     popup.classList.add('show');
-
     if (xpPopupTimeout) clearTimeout(xpPopupTimeout);
-
-    xpPopupTimeout = setTimeout(() => {
-        popup.classList.remove('show');
-    }, 7000);
+    xpPopupTimeout = setTimeout(() => popup.classList.remove('show'), 7000);
 }
 
 function openXP() {
-    if (!currentUser) {
-        openAuth('login');
-        showToast("Сначала войдите в аккаунт");
-        return;
-    }
+    if (!currentUser) { openAuth('login'); showToast("Сначала войдите в аккаунт"); return; }
     showXpPopup();
 }
 
 function getDeclension(number, one, few, many) {
-    let mod10 = number % 10;
-    let mod100 = number % 100;
+    const mod10 = number % 10, mod100 = number % 100;
     if (mod100 >= 11 && mod100 <= 19) return many;
     if (mod10 === 1) return one;
     if (mod10 >= 2 && mod10 <= 4) return few;
@@ -255,24 +350,13 @@ function getDeclension(number, one, few, many) {
 function formatTimeAgo(timestamp) {
     if (!timestamp) return "в сети";
     const diffSeconds = Math.floor((Date.now() - timestamp) / 1000);
-    
     if (diffSeconds < 10) return "В сети";
-    
     const diffMinutes = Math.floor(diffSeconds / 60);
-    if (diffMinutes < 60) {
-        let word = getDeclension(diffMinutes, "минуту", "минуты", "минут");
-        return `был ${diffMinutes} ${word} назад`;
-    }
-    
+    if (diffMinutes < 60) return `был ${diffMinutes} ${getDeclension(diffMinutes, "минуту", "минуты", "минут")} назад`;
     const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) {
-        let word = getDeclension(diffHours, "час", "часа", "часов");
-        return `был ${diffHours} ${word} назад`;
-    }
-    
+    if (diffHours < 24) return `был ${diffHours} ${getDeclension(diffHours, "час", "часа", "часов")} назад`;
     const diffDays = Math.floor(diffHours / 24);
-    let word = getDeclension(diffDays, "день", "дня", "дней");
-    return `был ${diffDays} ${word} назад`;
+    return `был ${diffDays} ${getDeclension(diffDays, "день", "дня", "дней")} назад`;
 }
 
 function initActivityTracking() {
@@ -281,33 +365,21 @@ function initActivityTracking() {
             currentUser.lastActive = Date.now();
             localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
         }
-
         const statusElem = document.getElementById('userStatusText');
-        if (statusElem) {
-            statusElem.textContent = currentUser ? "В сети" : "Гость";
-        }
+        if (statusElem) statusElem.textContent = currentUser ? "В сети" : "Гость";
     }, 1000);
 }
 
 function initLavaDrips() {
     const container = document.getElementById('lavaDripsLayer');
     if (!container) return;
-    const dripCount = 22;
-
-    for (let i = 0; i < dripCount; i++) {
+    for (let i = 0; i < 22; i++) {
         const drip = document.createElement('div');
         drip.className = 'lava-drip';
-        
-        const left = Math.random() * 100;
-        const duration = 5 + Math.random() * 9;
-        const delay = Math.random() * 10;
-        const width = 2 + Math.random() * 3;
-
-        drip.style.left = `${left}%`;
-        drip.style.animationDuration = `${duration}s`;
-        drip.style.animationDelay = `${delay}s`;
-        drip.style.width = `${width}px`;
-
+        drip.style.left = `${Math.random() * 100}%`;
+        drip.style.animationDuration = `${5 + Math.random() * 9}s`;
+        drip.style.animationDelay = `${Math.random() * 10}s`;
+        drip.style.width = `${2 + Math.random() * 3}px`;
         container.appendChild(drip);
     }
 }
@@ -334,11 +406,8 @@ function updateHeaderAndSidebar() {
         const adminBadge = currentUser.isAdmin ? ' 🛡️' : '';
         sideName.textContent = currentUser.username + adminBadge;
         sideAvatar.innerHTML = currentUser.avatar ? `<img src="${currentUser.avatar}">` : '👤';
-        if (sideLevel) {
-            sideLevel.textContent = currentUser.level || 1;
-            sideLevel.style.display = 'block';
-        }
-        
+        if (sideLevel) { sideLevel.textContent = currentUser.level || 1; sideLevel.style.display = 'block'; }
+
         if (currentUser.isAdmin) {
             accBtn.textContent = 'Выйти из админ режима';
             accBtn.onclick = exitAdminMode;
@@ -354,9 +423,7 @@ function updateHeaderAndSidebar() {
     } else {
         sideName.textContent = "Гость";
         sideAvatar.innerHTML = '👤';
-        if (sideLevel) {
-            sideLevel.style.display = 'none';
-        }
+        if (sideLevel) sideLevel.style.display = 'none';
         accBtn.textContent = 'Войти';
         accBtn.onclick = () => openAuth('login');
 
@@ -365,13 +432,16 @@ function updateHeaderAndSidebar() {
             <button class="orange-button" onclick="openAuth('register')">Регистрация</button>
         `;
     }
+
+    if (typeof updatePresence === 'function') updatePresence();
 }
 
-function logout() {
+async function logout() {
     if (currentUser) {
         currentUser.lastActive = Date.now() - 60000;
-        users = users.map(u => u.id === currentUser.id ? currentUser : u);
-        saveData();
+        const idx = users.findIndex(u => u.id === currentUser.id);
+        if (idx > -1) users[idx] = currentUser;
+        await saveUserToSupabase(currentUser);
     }
     currentUser = null;
     localStorage.removeItem('lava_current_user');
@@ -381,11 +451,7 @@ function logout() {
 }
 
 function protectedAction(callback) {
-    if (!currentUser) {
-        openAuth('login');
-        showToast("Сначала войдите в аккаунт");
-        return;
-    }
+    if (!currentUser) { openAuth('login'); showToast("Сначала войдите в аккаунт"); return; }
     callback();
 }
 
@@ -393,11 +459,7 @@ function showForumView() { switchView('forumView'); renderPosts(); }
 function showVoiceView() { switchView('voiceView'); }
 
 function openLikedView() {
-    if (!currentUser) {
-        openAuth('login');
-        showToast("Сначала войдите в аккаунт");
-        return;
-    }
+    if (!currentUser) { openAuth('login'); showToast("Сначала войдите в аккаунт"); return; }
     switchView('likedView');
     renderLikedPosts();
 }
@@ -407,6 +469,10 @@ function switchView(viewId) {
     document.querySelectorAll('.view-section').forEach(el => el.style.display = 'none');
     document.getElementById(viewId).style.display = 'flex';
 }
+
+// ==========================================
+// ПОСТЫ
+// ==========================================
 
 function generatePostHTML(post) {
     const isLikedByMe = currentUser && currentUser.likedPostIds && currentUser.likedPostIds.includes(post.id);
@@ -420,7 +486,7 @@ function generatePostHTML(post) {
                     <div class="post-user-avatar">${post.avatar ? `<img src="${post.avatar}">` : '👤'}</div>
                     <div>
                         <span class="post-author dark-blue-username">${escapeHtml(post.author)}</span>
-                        <span class="post-time">${post.date}</span>
+                        <span class="post-time">${escapeHtml(post.date)}</span>
                     </div>
                 </div>
             </div>
@@ -432,7 +498,6 @@ function generatePostHTML(post) {
                     ${canDeleteMedia ? `<button onclick="deletePostImage(${post.id})" style="position:absolute; top:8px; right:8px; background:rgba(242,63,67,0.9); color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑 Удалить фото</button>` : ''}
                 </div>
             ` : ''}
-            
             <div class="post-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 10px;">
                 <div class="post-actions" style="margin-bottom: 0;">
                     <button onclick="toggleLike(${post.id})" class="like-btn ${isLikedByMe ? 'liked' : ''}">
@@ -446,12 +511,12 @@ function generatePostHTML(post) {
     `;
 }
 
-function deletePostImage(postId) {
+async function deletePostImage(postId) {
     if (!currentUser || !currentUser.isAdmin) return;
     const post = posts.find(p => p.id === postId);
     if (post) {
         post.media = '';
-        saveData();
+        await savePostToSupabase(post);
         renderPosts();
         if (currentView === 'profileView') showProfileView(post.authorId);
         showToast("🛡 Картинка поста удалена админом");
@@ -463,16 +528,14 @@ function renderPosts() {
     if (!container) return;
     const searchInput = document.getElementById('searchInput');
     const searchVal = searchInput ? searchInput.value.toLowerCase() : '';
-    
-    let filtered = posts.filter(p => 
-        p.title.toLowerCase().includes(searchVal) || p.text.toLowerCase().includes(searchVal)
+
+    let filtered = posts.filter(p =>
+        (p.title || '').toLowerCase().includes(searchVal) ||
+        (p.text || '').toLowerCase().includes(searchVal)
     );
 
-    if (currentFilter === 'popular') {
-        filtered.sort((a, b) => b.likes - a.likes);
-    } else {
-        filtered.sort((a, b) => b.id - a.id);
-    }
+    if (currentFilter === 'popular') filtered.sort((a, b) => b.likes - a.likes);
+    else filtered.sort((a, b) => b.id - a.id);
 
     const topicCountElem = document.getElementById('topicCount');
     if (topicCountElem) topicCountElem.textContent = `${filtered.length} тем`;
@@ -481,8 +544,7 @@ function renderPosts() {
         container.innerHTML = `<div style="text-align:center; color:var(--muted); padding:30px;">Тем пока нет</div>`;
         return;
     }
-
-    container.innerHTML = filtered.map(post => generatePostHTML(post)).join('');
+    container.innerHTML = filtered.map(generatePostHTML).join('');
 }
 
 function renderLikedPosts() {
@@ -492,14 +554,12 @@ function renderLikedPosts() {
         container.innerHTML = `<div style="text-align:center; color:var(--muted); padding:30px;">У вас пока нет понравившихся тем</div>`;
         return;
     }
-
     const likedPosts = posts.filter(p => currentUser.likedPostIds.includes(p.id));
     if (likedPosts.length === 0) {
         container.innerHTML = `<div style="text-align:center; color:var(--muted); padding:30px;">У вас пока нет понравившихся тем</div>`;
         return;
     }
-
-    container.innerHTML = likedPosts.map(post => generatePostHTML(post)).join('');
+    container.innerHTML = likedPosts.map(generatePostHTML).join('');
 }
 
 function handlePostContextMenu(event, postId) {
@@ -527,8 +587,8 @@ function createPost() {
     document.getElementById('postTitle').value = '';
     document.getElementById('postText').value = '';
     document.getElementById('postMediaFile').value = '';
-    const mediaNameElem = document.getElementById('postMediaName');
-    if (mediaNameElem) mediaNameElem.textContent = '';
+    const el = document.getElementById('postMediaName');
+    if (el) el.textContent = '';
     openModal('postModal');
 }
 
@@ -537,16 +597,12 @@ function submitPost() {
     const text = document.getElementById('postText').value.trim();
     const fileInput = document.getElementById('postMediaFile');
 
-    if (!title || !text) {
-        showToast("Заполните заголовок и текст");
-        return;
-    }
+    if (!title || !text) { showToast("Заполните заголовок и текст"); return; }
 
-    const finishCreation = (mediaUrl = '') => {
-        posts.unshift({
+    const finishCreation = async (mediaUrl = '') => {
+        const tempPost = {
             id: Date.now(),
-            title,
-            text,
+            title, text,
             author: currentUser.username,
             authorId: currentUser.id,
             avatar: currentUser.avatar || '',
@@ -555,13 +611,14 @@ function submitPost() {
             likedBy: [],
             comments: [],
             media: mediaUrl
-        });
-        saveData();
-        closeModal('postModal');
+        };
+        posts.unshift(tempPost);
         renderPosts();
-        
-        if (currentView === 'profileView') showProfileView(currentUser.id);
+        closeModal('postModal');
 
+        await savePostToSupabase(tempPost);
+
+        if (currentView === 'profileView') showProfileView(currentUser.id);
         addXp(20, false);
         showToast("Тема успешно создана! (+20 XP)");
     };
@@ -575,11 +632,9 @@ function submitPost() {
     }
 }
 
-function deletePost(id) {
+async function deletePost(id) {
     const postToDelete = posts.find(p => p.id === id);
-    if (postToDelete && currentUser && postToDelete.authorId === currentUser.id) {
-        addXp(-20, false);
-    }
+    if (postToDelete && currentUser && postToDelete.authorId === currentUser.id) addXp(-20, false);
 
     posts = posts.filter(p => p.id !== id);
     users.forEach(u => {
@@ -588,15 +643,16 @@ function deletePost(id) {
     if (currentUser && currentUser.likedPostIds) {
         currentUser.likedPostIds = currentUser.likedPostIds.filter(pid => pid !== id);
         localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
+        await saveUserToSupabase(currentUser);
     }
-    saveData();
+    await deletePostFromSupabase(id);
     renderPosts();
     if (currentView === 'likedView') renderLikedPosts();
     if (currentView === 'profileView') showProfileView(currentUser ? currentUser.id : '');
     showToast("Тема удалена");
 }
 
-function toggleLike(postId) {
+async function toggleLike(postId) {
     if (!currentUser) { openAuth('login'); return; }
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -608,28 +664,30 @@ function toggleLike(postId) {
         post.likedBy.splice(index, 1);
         post.likes--;
         currentUser.likedPostIds = currentUser.likedPostIds.filter(id => id !== postId);
-
         addXp(-10, false);
         showToast("❤ Лайк снят (-10 XP)");
     } else {
         post.likedBy.push(currentUser.id);
         post.likes++;
-        if (!currentUser.likedPostIds.includes(postId)) {
-            currentUser.likedPostIds.push(postId);
-        }
-
+        if (!currentUser.likedPostIds.includes(postId)) currentUser.likedPostIds.push(postId);
         addXp(10, false);
-        showToast("❤ Лайк поставлен и сохранен! (+10 XP)");
+        showToast("❤ Лайк поставлен! (+10 XP)");
     }
 
-    users = users.map(u => u.id === currentUser.id ? currentUser : u);
+    const idx = users.findIndex(u => u.id === currentUser.id);
+    if (idx > -1) users[idx] = currentUser;
     localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
-    saveData();
-    
+    await savePostToSupabase(post);
+    await saveUserToSupabase(currentUser);
+
     renderPosts();
     if (currentView === 'likedView') renderLikedPosts();
     if (currentView === 'profileView') showProfileView(currentUser.id);
 }
+
+// ==========================================
+// КОММЕНТАРИИ
+// ==========================================
 
 let currentCommentPostId = null;
 function openComments(postId) {
@@ -648,15 +706,13 @@ function renderCommentsList() {
         container.innerHTML = `<div style="color:var(--muted); text-align:center;">Нет комментариев</div>`;
         return;
     }
-
     container.innerHTML = post.comments.map(c => {
         const canDeleteComment = currentUser && (currentUser.id === c.authorId || currentUser.isAdmin);
         const canDeleteMedia = currentUser && currentUser.isAdmin && c.media;
-
         return `
             <div class="comment" style="margin-bottom:10px; display: flex; justify-content: space-between; align-items: flex-start; background: rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
                 <div style="flex:1;">
-                    <div style="font-weight:600; font-size:13px; color:#3b82f6;">${escapeHtml(c.author)} <span style="font-size:10px; color:var(--muted);">${c.date}</span></div>
+                    <div style="font-weight:600; font-size:13px; color:#3b82f6;">${escapeHtml(c.author)} <span style="font-size:10px; color:var(--muted);">${escapeHtml(c.date || '')}</span></div>
                     <div style="font-size:13px; color:#cbd5e1; margin-top:2px;">${escapeHtml(c.text)}</div>
                     ${c.media ? `
                         <div style="position:relative; display:inline-block; margin-top:6px;">
@@ -671,16 +727,16 @@ function renderCommentsList() {
     }).join('');
 }
 
-function deleteCommentImage(postId, commentId) {
+async function deleteCommentImage(postId, commentId) {
     if (!currentUser || !currentUser.isAdmin) return;
     const post = posts.find(p => p.id === postId);
     if (post && post.comments) {
         const comment = post.comments.find(c => c.id === commentId);
         if (comment) {
             comment.media = '';
-            saveData();
+            await savePostToSupabase(post);
             renderCommentsList();
-            showToast("🛡️ Картинка комментария удалена админом");
+            showToast("🛡️ Картинка комментария удалена");
         }
     }
 }
@@ -695,24 +751,24 @@ function submitComment() {
     if (!post) return;
     if (!post.comments) post.comments = [];
 
-    const finishComment = (mediaUrl = '') => {
-        post.comments.push({ 
-            id: Date.now(), 
+    const finishComment = async (mediaUrl = '') => {
+        post.comments.push({
+            id: Date.now(),
             authorId: currentUser.id,
-            author: currentUser.username, 
-            text, 
-            date: "Только что", 
-            media: mediaUrl 
+            author: currentUser.username,
+            text,
+            date: "Только что",
+            media: mediaUrl
         });
-        saveData();
         textInput.value = '';
         fileInput.value = '';
-        const mediaNameElem = document.getElementById('commentMediaName');
-        if (mediaNameElem) mediaNameElem.textContent = '';
+        const el = document.getElementById('commentMediaName');
+        if (el) el.textContent = '';
+
+        await savePostToSupabase(post);
         renderCommentsList();
         renderPosts();
         if (currentView === 'likedView') renderLikedPosts();
-
         addXp(10, false);
         showToast("💬 Комментарий отправлен! (+10 XP)");
     };
@@ -726,22 +782,22 @@ function submitComment() {
     }
 }
 
-function deleteComment(commentId) {
+async function deleteComment(commentId) {
     const post = posts.find(p => p.id === currentCommentPostId);
     if (!post || !post.comments) return;
-
-    const commentIndex = post.comments.findIndex(c => c.id === commentId);
-    if (commentIndex > -1) {
-        post.comments.splice(commentIndex, 1);
-        saveData();
+    const i = post.comments.findIndex(c => c.id === commentId);
+    if (i > -1) {
+        post.comments.splice(i, 1);
+        await savePostToSupabase(post);
         renderCommentsList();
         renderPosts();
         if (currentView === 'likedView') renderLikedPosts();
-        
         addXp(-10, false);
         showToast("Комментарий удален (-10 XP)");
     }
-}
+}// ==========================================
+// ГОЛОСОВЫЕ КАНАЛЫ
+// ==========================================
 
 const voiceChannelsData = [
     { id: 'general', name: '🔊 Общий канал' },
@@ -751,40 +807,24 @@ const voiceChannelsData = [
 
 function setupAudioAnalysis(stream) {
     try {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
         micSource = audioCtx.createMediaStreamSource(stream);
         micSource.connect(analyser);
-
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        
         function checkVolume() {
             if (!localStream || isMuted) {
-                if (isSpeakingState) {
-                    isSpeakingState = false;
-                    renderVoiceGrid();
-                }
+                if (isSpeakingState) { isSpeakingState = false; renderVoiceGrid(); }
                 requestAnimationFrame(checkVolume);
                 return;
             }
             analyser.getByteFrequencyData(dataArray);
             let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i];
-            }
-            let average = sum / dataArray.length;
-            let speakingNow = average > 12;
-
-            if (speakingNow !== isSpeakingState) {
-                isSpeakingState = speakingNow;
-                renderVoiceGrid();
-            }
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const speakingNow = (sum / dataArray.length) > 12;
+            if (speakingNow !== isSpeakingState) { isSpeakingState = speakingNow; renderVoiceGrid(); }
             requestAnimationFrame(checkVolume);
         }
         checkVolume();
@@ -817,16 +857,13 @@ async function joinVoiceChannel(channelId) {
     }
 
     if (!usersInVoice[channelId]) usersInVoice[channelId] = [];
-    usersInVoice[channelId].push({ 
-        id: currentUser.id, 
-        name: currentUser.username, 
+    usersInVoice[channelId].push({
+        id: currentUser.id,
+        name: currentUser.username,
         avatar: currentUser.avatar || ''
     });
 
     activeVoiceChannel = channelId;
-    
-    // Сохраняем состояние в Supabase, чтобы другие пользователи сразу увидели вас в канале
-    saveDataToSupabase();
 
     const channelObj = voiceChannelsData.find(c => c.id === channelId);
     document.getElementById('activeVoiceHeader').textContent = `# ${channelObj.name}`;
@@ -852,9 +889,6 @@ function disconnectVoice() {
 
     usersInVoice[activeVoiceChannel] = usersInVoice[activeVoiceChannel].filter(u => u.id !== currentUser.id);
     activeVoiceChannel = null;
-
-    // Сохраняем изменения в Supabase после выхода из канала
-    saveDataToSupabase();
 
     document.getElementById('voiceGridArea').style.display = 'none';
     document.getElementById('discordVoiceBar').style.display = 'none';
@@ -894,20 +928,20 @@ function renderVoiceGrid() {
 
     grid.innerHTML = members.map(m => {
         const isMe = m.id === currentUser?.id;
-        const speaking = isMe ? (isSpeakingState && !isMuted && !m.adminMuted) : false; 
+        const speaking = isMe ? (isSpeakingState && !isMuted && !m.adminMuted) : false;
         const userMuted = isMe ? (isMuted || m.adminMuted) : (m.isMuted || m.adminMuted);
         const userDeaf = isMe ? (isDeafened || m.adminDeafened) : (m.isDeafened || m.adminDeafened);
 
-        let mediaHtml = (isMe && isCamOn) 
-            ? `<video class="tile-video" autoplay playsinline muted id="selfVideoElem"></video>` 
+        let mediaHtml = (isMe && isCamOn)
+            ? `<video class="tile-video" autoplay playsinline muted id="selfVideoElem"></video>`
             : `<div class="tile-avatar">${m.avatar ? `<img src="${m.avatar}">` : '👤'}</div>`;
 
         return `
             <div class="discord-user-tile ${userMuted ? 'muted' : ''} ${speaking ? 'speaking' : ''}" onclick="openVoiceUserModal('${m.id}', '${escapeHtml(m.name)}')">
                 ${mediaHtml}
                 <div class="tile-username">
-                    ${escapeHtml(m.name)} 
-                    ${userMuted ? '🔇' : ''} 
+                    ${escapeHtml(m.name)}
+                    ${userMuted ? '🔇' : ''}
                     ${userDeaf ? '🎧' : ''}
                 </div>
             </div>
@@ -991,8 +1025,7 @@ function sendVoiceMessage() {
     if (!text) return;
     if (!voiceChatMessages[activeVoiceChannel]) voiceChatMessages[activeVoiceChannel] = [];
     voiceChatMessages[activeVoiceChannel].push({ author: currentUser.username, text });
-    
-    saveDataToSupabase(); 
+    localStorage.setItem('lava_voice_msgs', JSON.stringify(voiceChatMessages));
     input.value = '';
     renderVoiceChatMessages();
 }
@@ -1001,9 +1034,11 @@ function renderVoiceChatMessages() {
     if (!activeVoiceChannel) return;
     const container = document.getElementById('discordMessages');
     const msgs = voiceChatMessages[activeVoiceChannel] || [];
-    container.innerHTML = msgs.length === 0 ? `<div style="color:var(--muted); font-size:13px;">Нет сообщений в чате канала</div>` : msgs.map(m => `
-        <div class="discord-msg-card"><span style="font-weight:600; color:#3b82f6;">${escapeHtml(m.author)}:</span> ${escapeHtml(m.text)}</div>
-    `).join('');
+    container.innerHTML = msgs.length === 0
+        ? `<div style="color:var(--muted); font-size:13px;">Нет сообщений в чате канала</div>`
+        : msgs.map(m => `
+            <div class="discord-msg-card"><span style="font-weight:600; color:#3b82f6;">${escapeHtml(m.author)}:</span> ${escapeHtml(m.text)}</div>
+        `).join('');
     container.scrollTop = container.scrollHeight;
 }
 
@@ -1011,7 +1046,7 @@ let selectedVoiceUser = null;
 function openVoiceUserModal(userId, userName) {
     selectedVoiceUser = { id: userId, name: userName };
     document.getElementById('vModalUsername').textContent = userName;
-    
+
     const adminBox = document.getElementById('adminVoiceControls');
     if (adminBox) {
         adminBox.style.display = (currentUser && currentUser.isAdmin) ? 'flex' : 'none';
@@ -1025,7 +1060,6 @@ function adminToggleUserMic() {
     const u = usersInVoice[activeVoiceChannel].find(user => user.id === selectedVoiceUser.id);
     if (u) {
         u.adminMuted = !u.adminMuted;
-        saveDataToSupabase();
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
@@ -1039,7 +1073,6 @@ function adminToggleUserSound() {
     const u = usersInVoice[activeVoiceChannel].find(user => user.id === selectedVoiceUser.id);
     if (u) {
         u.adminDeafened = !u.adminDeafened;
-        saveDataToSupabase();
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
@@ -1051,16 +1084,25 @@ function vModalGoProfile() { closeModal('voiceUserModal'); showProfileView(selec
 function vModalAddFriend() { closeModal('voiceUserModal'); showToast(`Запрос отправлен`); }
 function vModalReport() { closeModal('voiceUserModal'); openModal('reportModal'); }
 
+// ==========================================
+// ПРОФИЛЬ
+// ==========================================
+
 function showProfileView(userId) {
     switchView('profileView');
-    let profileUser = currentUser && currentUser.id === userId ? currentUser : (users.find(u => u.id === userId) || { id: userId, username: "Участник", avatar: "", banner: "", lastActive: Date.now() - 300000, level: 1 });
+    let profileUser = currentUser && currentUser.id === userId
+        ? currentUser
+        : (users.find(u => u.id === userId) || {
+            id: userId, username: "Участник", avatar: "", banner: "",
+            lastActive: Date.now() - 300000, level: 1
+        });
 
     const adminBadge = profileUser.isAdmin ? ' 🛡️' : '';
     document.getElementById('profUsername').textContent = profileUser.username + adminBadge;
-    
+
     const profDateElem = document.getElementById('profDate');
     profDateElem.innerHTML = `Уровень: <span style="color:var(--orange); font-weight:600;">${profileUser.level || 1}</span> | На форуме с 2026 года`;
-    
+
     const statusElem = document.getElementById('profStatus');
     if (statusElem) {
         statusElem.textContent = formatTimeAgo(profileUser.lastActive);
@@ -1078,7 +1120,7 @@ function showProfileView(userId) {
         adminProfActions.style.cssText = 'margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;';
         document.querySelector('.profile-details').appendChild(adminProfActions);
     }
-    
+
     if (currentUser && currentUser.isAdmin && currentUser.id !== profileUser.id) {
         adminProfActions.innerHTML = `
             <button onclick="adminResetUserAvatar('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡️ Сбросить аватар</button>
@@ -1091,21 +1133,21 @@ function showProfileView(userId) {
 
     const userPosts = posts.filter(p => p.authorId === profileUser.id);
     const container = document.getElementById('profileUserPostsList');
-    
+
     if (userPosts.length === 0) {
         container.innerHTML = `<p style="color:var(--muted); font-size:13px;">Нет тем.</p>`;
     } else {
-        container.innerHTML = userPosts.map(post => generatePostHTML(post)).join('');
+        container.innerHTML = userPosts.map(generatePostHTML).join('');
     }
 }
 
-function adminResetUserAvatar(userId) {
+async function adminResetUserAvatar(userId) {
     if (!currentUser || !currentUser.isAdmin) return;
     let targetUser = users.find(u => u.id === userId);
     if (targetUser) {
         targetUser.avatar = '';
-        posts.forEach(p => { if (p.authorId === userId) p.avatar = ''; });
-        saveData();
+        posts.forEach(p => { if (p.authorId === userId) { p.avatar = ''; savePostToSupabase(p); } });
+        await saveUserToSupabase(targetUser);
         if (currentUser.id === userId) currentUser.avatar = '';
         localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
         updateHeaderAndSidebar();
@@ -1115,12 +1157,12 @@ function adminResetUserAvatar(userId) {
     }
 }
 
-function adminResetUserBanner(userId) {
+async function adminResetUserBanner(userId) {
     if (!currentUser || !currentUser.isAdmin) return;
     let targetUser = users.find(u => u.id === userId);
     if (targetUser) {
         targetUser.banner = '';
-        saveData();
+        await saveUserToSupabase(targetUser);
         if (currentUser.id === userId) currentUser.banner = '';
         localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
         if (currentView === 'profileView') showProfileView(userId);
@@ -1141,10 +1183,11 @@ function saveProfileChanges() {
     const avatarFile = document.getElementById('editAvatarFile').files[0];
     const bannerFile = document.getElementById('editBannerFile').files[0];
 
-    const finishSave = () => {
+    const finishSave = async () => {
         localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
-        users = users.map(u => u.id === currentUser.id ? currentUser : u);
-        saveData();
+        const idx = users.findIndex(u => u.id === currentUser.id);
+        if (idx > -1) users[idx] = currentUser;
+        await saveUserToSupabase(currentUser);
         updateHeaderAndSidebar();
         closeModal('editProfileModal');
         showProfileView(currentUser.id);
@@ -1155,12 +1198,12 @@ function saveProfileChanges() {
         let loaded = 0, total = (avatarFile ? 1 : 0) + (bannerFile ? 1 : 0);
         if (avatarFile) {
             const r = new FileReader();
-            r.onload = e => { currentUser.avatar = e.target.result; if(++loaded === total) finishSave(); };
+            r.onload = e => { currentUser.avatar = e.target.result; if (++loaded === total) finishSave(); };
             r.readAsDataURL(avatarFile);
         }
         if (bannerFile) {
             const r = new FileReader();
-            r.onload = e => { currentUser.banner = e.target.result; if(++loaded === total) finishSave(); };
+            r.onload = e => { currentUser.banner = e.target.result; if (++loaded === total) finishSave(); };
             r.readAsDataURL(bannerFile);
         }
     } else {
@@ -1168,29 +1211,33 @@ function saveProfileChanges() {
     }
 }
 
+// ==========================================
+// АВТОРИЗАЦИЯ
+// ==========================================
+
 let authMode = 'login';
 function openAuth(mode) {
     authMode = mode;
     document.getElementById('authTitle').textContent = mode === 'login' ? 'Авторизация' : 'Регистрация';
-    
+
     const emailInput = document.getElementById('authEmail');
     const gearBtn = document.getElementById('authGearBtn');
 
     if (mode === 'register') {
         emailInput.style.display = 'block';
-        gearBtn.style.display = 'none'; 
+        gearBtn.style.display = 'none';
     } else {
         emailInput.style.display = 'none';
         gearBtn.style.display = currentUser ? 'flex' : 'none';
     }
 
-    document.getElementById('authSwitch').innerHTML = mode === 'login' 
+    document.getElementById('authSwitch').innerHTML = mode === 'login'
         ? `Нет аккаунта? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('register')">Зарегистрироваться</span>`
         : `Уже есть аккаунт? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('login')">Войти</span>`;
     openModal('authModal');
 }
 
-function submitAuth() {
+async function submitAuth() {
     const username = document.getElementById('authUsername').value.trim();
     const password = document.getElementById('authPassword').value.trim();
     const emailInput = document.getElementById('authEmail').value.trim();
@@ -1203,35 +1250,34 @@ function submitAuth() {
             return;
         }
         if (users.find(u => u.username === username)) { showToast("Имя занято"); return; }
-        
-        const newUser = { 
-            id: 'u_' + Date.now(), 
-            username, 
+
+        const newUser = {
+            id: 'u_' + Date.now(),
+            username,
             email: emailInput,
-            password, 
-            avatar: '', 
-            banner: '', 
-            lastActive: Date.now(), 
-            xp: 0, 
-            level: 1, 
-            likedPostIds: [] 
+            password,
+            avatar: '', banner: '',
+            lastActive: Date.now(),
+            xp: 0, level: 1,
+            likedPostIds: []
         };
         users.push(newUser);
         currentUser = newUser;
-        saveData();
+        await saveUserToSupabase(newUser);
         closeModal('authModal');
         updateHeaderAndSidebar();
         showToast("Успешная регистрация!");
     } else {
-        let found = users.find(u => u.username === username && u.password === password);
+        const found = users.find(u => u.username === username && u.password === password);
         if (!found) { showToast("Неверный логин или пароль"); return; }
         currentUser = found;
         currentUser.lastActive = Date.now();
         if (currentUser.xp === undefined) currentUser.xp = 0;
         if (currentUser.level === undefined) currentUser.level = 1;
         if (!currentUser.likedPostIds) currentUser.likedPostIds = [];
-        users = users.map(u => u.id === currentUser.id ? currentUser : u);
-        saveData();
+        const idx = users.findIndex(u => u.id === currentUser.id);
+        if (idx > -1) users[idx] = currentUser;
+        await saveUserToSupabase(currentUser);
         closeModal('authModal');
         updateHeaderAndSidebar();
         showToast("Успешный вход!");
@@ -1258,13 +1304,14 @@ function sendRecoveryCode() {
 
 function confirmRecoveryCode() {
     const code = document.getElementById('verifyCodeInput').value.trim();
-    if (!code) {
-        showToast("Введите код подтверждения");
-        return;
-    }
+    if (!code) { showToast("Введите код подтверждения"); return; }
     closeModal('verifyCodeModal');
     showToast("Почта успешно подтверждена! Теперь можно войти.");
 }
+
+// ==========================================
+// SOUNDCLOUD ПЛЕЕР
+// ==========================================
 
 function addTrack() {
     const input = document.getElementById("url");
@@ -1273,21 +1320,10 @@ function addTrack() {
 
     error.textContent = "";
 
-    if (!url) {
-        error.textContent = "Вставь ссылку SoundCloud.";
-        return;
-    }
+    if (!url) { error.textContent = "Вставь ссылку SoundCloud."; return; }
+    if (!url.includes("soundcloud.com")) { error.textContent = "Это не ссылка SoundCloud."; return; }
 
-    if (!url.includes("soundcloud.com")) {
-        error.textContent = "Это не ссылка SoundCloud.";
-        return;
-    }
-
-    tracks.push({
-        url: url,
-        name: "SoundCloud трек"
-    });
-
+    tracks.push({ url, name: "SoundCloud трек" });
     input.value = "";
     renderQueue();
     playTrack(tracks.length - 1);
@@ -1333,17 +1369,12 @@ function playTrack(index) {
         document.getElementById("play").textContent = "▶";
     });
 
-    widget.bind(SC.Widget.Events.FINISH, function() {
-        next();
-    });
+    widget.bind(SC.Widget.Events.FINISH, function() { next(); });
 
     renderQueue();
 }
 
-function togglePlaySC() {
-    if (!widget) return;
-    widget.toggle();
-}
+function togglePlaySC() { if (widget) widget.toggle(); }
 
 function next() {
     if (!tracks.length) return;
@@ -1362,12 +1393,8 @@ function previous() {
 function changeVolume(val) {
     document.getElementById('volumeVal').textContent = val + '%';
     const bar = document.getElementById('volumeBar');
-    if (bar) {
-        bar.style.background = `linear-gradient(to right, var(--orange) ${val}%, rgba(255, 255, 255, 0.15) ${val}%)`;
-    }
-    if (widget) {
-        widget.setVolume(parseInt(val));
-    }
+    if (bar) bar.style.background = `linear-gradient(to right, var(--orange) ${val}%, rgba(255, 255, 255, 0.15) ${val}%)`;
+    if (widget) widget.setVolume(parseInt(val));
 }
 
 function renderQueue() {
@@ -1378,19 +1405,18 @@ function renderQueue() {
         const item = document.createElement("div");
         item.className = "track" + (index === currentIndex ? " active" : "");
         item.style.cssText = "margin-top:6px; padding:10px; border-radius:10px; background:#292929; cursor:pointer;";
-        
         item.innerHTML = `
             <div style="font-size:13px;">${index + 1}. ${track.name}</div>
             <small style="color:#888; font-size:11px;">SoundCloud</small>
         `;
-
-        item.onclick = function() {
-            playTrack(index);
-        };
-
+        item.onclick = function() { playTrack(index); };
         queue.appendChild(item);
     });
 }
+
+// ==========================================
+// МОДАЛКИ / TOAST / ESCAPE
+// ==========================================
 
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
@@ -1404,5 +1430,16 @@ function showToast(text) {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
+
+// Загружаем голосовые сообщения из localStorage (чтобы не терялись при перезагрузке)
+try {
+    const savedVoiceMsgs = localStorage.getItem('lava_voice_msgs');
+    if (savedVoiceMsgs) voiceChatMessages = JSON.parse(savedVoiceMsgs);
+} catch(e) {}

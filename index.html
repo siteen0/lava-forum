@@ -25,6 +25,7 @@
         </div>
         <div class="header-search">
             <input type="text" id="searchInput" placeholder="Поиск тем..." oninput="renderPosts()">
+            <span id="onlineCounter" style="margin-left:10px; color:#94a3b8; font-weight:600; font-size:13px; white-space:nowrap;">🟢 Онлайн: …</span>
         </div>
         <div class="header-right" id="headerAccount">
             <button onclick="openAuth('login')">Войти</button>
@@ -355,5 +356,6 @@
 
     <script src="https://w.soundcloud.com/player/api.js"></script>
     <script src="script.js"></script>
+    <script src="presence.js"></script>
 </body>
 </html>
