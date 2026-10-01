@@ -162,6 +162,16 @@ input, textarea {
     color: var(--orange);
     cursor: pointer;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-image {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    border-radius: 50%;
 }
 
 .header-search input {
