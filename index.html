@@ -172,16 +172,48 @@
         </div>
     </div>
 
+    <!-- Модальное окно Авторизации/Регистрации -->
     <div class="modal-overlay" id="authModal">
         <div class="modal-window">
             <h3 id="authTitle">Авторизация</h3>
             <input type="text" id="authUsername" placeholder="Имя пользователя">
+            <!-- Поле почты (видно только при регистрации) -->
+            <input type="email" id="authEmail" placeholder="Почта (@gmail.com)" style="display:none;">
             <input type="password" id="authPassword" placeholder="Пароль">
-            <div class="modal-buttons">
-                <button class="orange-button" onclick="submitAuth()">Подтвердить</button>
-                <button onclick="closeModal('authModal')">Отмена</button>
+            <div class="modal-buttons" style="display: flex; align-items: center; justify-content: space-between;">
+                <!-- Шестеренка «Забыл пароль» (появляется слева только если пользователь залогинен) -->
+                <button id="authGearBtn" class="gear-btn" onclick="openForgotPasswordModal()" style="display:none;" title="Забыли пароль?">⚙</button>
+                <div style="display: flex; gap: 8px; margin-left: auto;">
+                    <button class="orange-button" onclick="submitAuth()">Подтвердить</button>
+                    <button onclick="closeModal('authModal')">Отмена</button>
+                </div>
             </div>
             <p id="authSwitch" style="margin-top:12px; font-size:13px; text-align:center;"></p>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Забыли пароль -->
+    <div class="modal-overlay" id="forgotPasswordModal">
+        <div class="modal-window">
+            <h3>Восстановление пароля</h3>
+            <input type="email" id="forgotEmailInput" placeholder="Введите вашу почту (@gmail.com)">
+            <div class="modal-buttons">
+                <button class="orange-button" onclick="sendRecoveryCode()">Отправить код</button>
+                <button onclick="closeModal('forgotPasswordModal')">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Ввод кода подтверждения -->
+    <div class="modal-overlay" id="verifyCodeModal">
+        <div class="modal-window">
+            <h3>Подтверждение почты</h3>
+            <p style="font-size:13px; color:var(--muted);">Введите код, отправленный на вашу почту:</p>
+            <input type="text" id="verifyCodeInput" placeholder="Код подтверждения">
+            <div class="modal-buttons">
+                <button class="orange-button" onclick="confirmRecoveryCode()">Подтвердить</button>
+                <button onclick="closeModal('verifyCodeModal')">Отмена</button>
+            </div>
         </div>
     </div>
 

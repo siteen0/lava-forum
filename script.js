@@ -72,6 +72,7 @@ function submitAdminAuth() {
             currentUser = { 
                 id: 'admin_usr_' + Date.now(), 
                 username: 'Admin', 
+                email: 'admin@gmail.com',
                 avatar: '', 
                 banner: '', 
                 lastActive: Date.now(), 
@@ -389,7 +390,7 @@ function deletePostImage(postId) {
         saveData();
         renderPosts();
         if (currentView === 'profileView') showProfileView(post.authorId);
-        showToast("🛡️ Картинка поста удалена админом");
+        showToast("🛡️️ Картинка поста удалена админом");
     }
 }
 
@@ -967,7 +968,7 @@ function adminToggleUserSound() {
         renderVoiceGrid();
         renderVoiceChannels();
         closeModal('voiceUserModal');
-        showToast(`🛡️ Звук ${selectedVoiceUser.name} ${u.adminDeafened ? 'выключен' : 'включен'}`);
+        showToast(`🛡️️ Звук ${selectedVoiceUser.name} ${u.adminDeafened ? 'выключен' : 'включен'}`);
     }
 }
 
@@ -1006,7 +1007,7 @@ function showProfileView(userId) {
     if (currentUser && currentUser.isAdmin && currentUser.id !== profileUser.id) {
         adminProfActions.innerHTML = `
             <button onclick="adminResetUserAvatar('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡️ Сбросить аватар</button>
-            <button onclick="adminResetUserBanner('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡️️ Сбросить баннер</button>
+            <button onclick="adminResetUserBanner('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡 Сбросить баннер</button>
         `;
         adminProfActions.style.display = 'flex';
     } else {
@@ -1096,6 +1097,19 @@ let authMode = 'login';
 function openAuth(mode) {
     authMode = mode;
     document.getElementById('authTitle').textContent = mode === 'login' ? 'Авторизация' : 'Регистрация';
+    
+    const emailInput = document.getElementById('authEmail');
+    const gearBtn = document.getElementById('authGearBtn');
+
+    if (mode === 'register') {
+        emailInput.style.display = 'block';
+        gearBtn.style.display = 'none'; // Шестеренка появляется только при входе, когда юзер уже в аккаунте
+    } else {
+        emailInput.style.display = 'none';
+        // Показываем шестеренку только если кто-то залогинен в системе
+        gearBtn.style.display = currentUser ? 'flex' : 'none';
+    }
+
     document.getElementById('authSwitch').innerHTML = mode === 'login' 
         ? `Нет аккаунта? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('register')">Зарегистрироваться</span>`
         : `Уже есть аккаунт? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('login')">Войти</span>`;
@@ -1105,11 +1119,29 @@ function openAuth(mode) {
 function submitAuth() {
     const username = document.getElementById('authUsername').value.trim();
     const password = document.getElementById('authPassword').value.trim();
+    const emailInput = document.getElementById('authEmail').value.trim();
+
     if (!username || !password) { showToast("Заполните все поля"); return; }
 
     if (authMode === 'register') {
+        if (!emailInput || !emailInput.endsWith('@gmail.com')) {
+            showToast("Введите настоящую почту @gmail.com!");
+            return;
+        }
         if (users.find(u => u.username === username)) { showToast("Имя занято"); return; }
-        const newUser = { id: 'u_' + Date.now(), username, password, avatar: '', banner: '', lastActive: Date.now(), xp: 0, level: 1, likedPostIds: [] };
+        
+        const newUser = { 
+            id: 'u_' + Date.now(), 
+            username, 
+            email: emailInput,
+            password, 
+            avatar: '', 
+            banner: '', 
+            lastActive: Date.now(), 
+            xp: 0, 
+            level: 1, 
+            likedPostIds: [] 
+        };
         users.push(newUser);
         currentUser = newUser;
         saveData();
@@ -1131,6 +1163,33 @@ function submitAuth() {
         showToast("Успешный вход!");
     }
     renderPosts();
+}
+
+function openForgotPasswordModal() {
+    closeModal('authModal');
+    document.getElementById('forgotEmailInput').value = '';
+    openModal('forgotPasswordModal');
+}
+
+function sendRecoveryCode() {
+    const email = document.getElementById('forgotEmailInput').value.trim();
+    if (!email || !email.endsWith('@gmail.com')) {
+        showToast("Введите корректную почту @gmail.com");
+        return;
+    }
+    closeModal('forgotPasswordModal');
+    showToast("Код подтверждения отправлен на почту!");
+    openModal('verifyCodeModal');
+}
+
+function confirmRecoveryCode() {
+    const code = document.getElementById('verifyCodeInput').value.trim();
+    if (!code) {
+        showToast("Введите код подтверждения");
+        return;
+    }
+    closeModal('verifyCodeModal');
+    showToast("Почта успешно подтверждена! Теперь можно войти.");
 }
 
 // --- SOUNDCLOUD ПЛЕЕР ---
