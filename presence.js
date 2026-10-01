@@ -36,7 +36,6 @@ function initPresence() {
             onlineUsersCache = Object.values(state).flat();
             renderOnlineCounter();
         })
-        // Уведомления о входе/выходе отключены
         .on('presence', { event: 'join' }, () => {})
         .on('presence', { event: 'leave' }, () => {})
         .subscribe(async (status) => {
@@ -78,12 +77,10 @@ function renderOnlineCounter() {
     el.style.color = total > 1 ? '#23a55a' : '#94a3b8';
 }
 
-// Обновляем своё состояние раз в 30 сек
 setInterval(() => {
     if (presenceRoom && typeof currentUser !== 'undefined' && currentUser) trackSelf();
 }, 30000);
 
-// Запускаем presence после загрузки страницы
 window.addEventListener('load', () => {
     setTimeout(initPresence, 600);
 });

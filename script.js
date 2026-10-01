@@ -46,7 +46,6 @@ window.onload = async function() {
     await loadUsersFromSupabase();
     await loadPostsFromSupabase();
 
-    // Realtime: посты
     supabaseClient
         .channel('posts-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, payload => {
@@ -54,7 +53,6 @@ window.onload = async function() {
         })
         .subscribe();
 
-    // Realtime: пользователи
     supabaseClient
         .channel('users-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
@@ -87,12 +85,13 @@ function rowToUser(row) {
         level: row.level || 1,
         isAdmin: !!row.is_admin,
         lastActive: row.last_active || 0,
-        likedPostIds: row.liked_post_ids || []
+        likedPostIds: row.liked_post_ids || [],
+        createdAt: row.created_at || null
     };
 }
 
 function userToRow(u) {
-    return {
+    const row = {
         id: u.id,
         username: u.username,
         email: u.email || '',
@@ -105,6 +104,8 @@ function userToRow(u) {
         last_active: u.lastActive || Date.now(),
         liked_post_ids: u.likedPostIds || []
     };
+    if (u.createdAt) row.created_at = u.createdAt;
+    return row;
 }
 
 async function loadUsersFromSupabase() {
@@ -254,7 +255,8 @@ async function submitAdminAuth() {
                 lastActive: Date.now(),
                 xp: 500, level: 99,
                 likedPostIds: [],
-                isAdmin: true
+                isAdmin: true,
+                createdAt: Date.now()
             };
             users.push(currentUser);
         } else {
@@ -357,44 +359,44 @@ function formatTimeAgo(timestamp) {
     return `был ${diffDays} ${getDeclension(diffDays, "день", "дня", "дней")} назад`;
 }
 
-// Универсальный форматтер даты: «сегодня HH:MM», «вчера HH:MM», «DD.MM.YYYY HH:MM»
 function formatDateNow() {
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Преобразует дату поста в человекочитаемый вид относительно текущего момента
 function formatPostDate(raw) {
     if (!raw) return '';
-    // Если уже есть в формате DD.MM.YYYY HH:MM — распарсим
     const m = String(raw).match(/^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/);
-    if (!m) return raw; // старое значение вроде «Только что» или пустое — оставим как есть
+    if (!m) return raw;
 
     const postDate = new Date(
         parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]),
         parseInt(m[4]), parseInt(m[5])
     );
     const now = new Date();
-    const diffMs = now - postDate;
-    const diffMin = Math.floor(diffMs / 60000);
-
+    const diffMin = Math.floor((now - postDate) / 60000);
     const pad = n => String(n).padStart(2, '0');
     const timeStr = `${pad(postDate.getHours())}:${pad(postDate.getMinutes())}`;
 
     if (diffMin < 1) return 'только что';
     if (diffMin < 60) return `${diffMin} ${getDeclension(diffMin, 'минуту', 'минуты', 'минут')} назад`;
-
-    // Сегодня?
     if (postDate.toDateString() === now.toDateString()) return `сегодня в ${timeStr}`;
 
-    // Вчера?
     const yest = new Date(now);
     yest.setDate(now.getDate() - 1);
     if (postDate.toDateString() === yest.toDateString()) return `вчера в ${timeStr}`;
 
-    // Полная дата
     return `${pad(postDate.getDate())}.${pad(postDate.getMonth() + 1)}.${postDate.getFullYear()} ${timeStr}`;
+}
+
+// Дата регистрации — формат ДД.ММ.ГГГГ
+function formatRegistrationDate(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
 function initActivityTracking() {
@@ -644,7 +646,7 @@ function submitPost() {
             author: currentUser.username,
             authorId: currentUser.id,
             avatar: currentUser.avatar || '',
-            date: formatDateNow(),      // <-- реальное время
+            date: formatDateNow(),
             likes: 0,
             likedBy: [],
             comments: [],
@@ -724,7 +726,7 @@ async function toggleLike(postId) {
 }
 
 // ==========================================
-// КОММЕНТАРИИ
+// КОММЕНТАРИИ (с аватаркой автора)
 // ==========================================
 
 let currentCommentPostId = null;
@@ -747,10 +749,27 @@ function renderCommentsList() {
     container.innerHTML = post.comments.map(c => {
         const canDeleteComment = currentUser && (currentUser.id === c.authorId || currentUser.isAdmin);
         const canDeleteMedia = currentUser && currentUser.isAdmin && c.media;
+
+        // Ищем аватар автора комментария в users (или берём из самого комментария)
+        let avatar = c.avatar || '';
+        if (!avatar) {
+            const u = users.find(x => x.id === c.authorId);
+            if (u && u.avatar) avatar = u.avatar;
+        }
+
         return `
-            <div class="comment" style="margin-bottom:10px; display: flex; justify-content: space-between; align-items: flex-start; background: rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
+            <div class="comment" style="margin-bottom:10px; display: flex; gap:10px; align-items: flex-start; background: rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
+                <div class="comment-avatar" style="width:36px; height:36px; flex-shrink:0; border-radius:50%; overflow:hidden; background:#2b2d31; display:flex; align-items:center; justify-content:center; font-size:16px;">
+                    ${avatar ? `<img src="${avatar}" style="width:100%;height:100%;object-fit:cover;">` : '👤'}
+                </div>
                 <div style="flex:1;">
-                    <div style="font-weight:600; font-size:13px; color:#3b82f6;">${escapeHtml(c.author)} <span style="font-size:10px; color:var(--muted);">${escapeHtml(formatPostDate(c.date || ''))}</span></div>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div style="font-weight:600; font-size:13px; color:#3b82f6;">
+                            ${escapeHtml(c.author)}
+                            <span style="font-size:10px; color:var(--muted); font-weight:400; margin-left:6px;">${escapeHtml(formatPostDate(c.date || ''))}</span>
+                        </div>
+                        ${canDeleteComment ? `<button onclick="deleteComment(${c.id})" style="background:transparent; border:none; color:#f23f43; cursor:pointer; font-size:12px;">Удалить</button>` : ''}
+                    </div>
                     <div style="font-size:13px; color:#cbd5e1; margin-top:2px;">${escapeHtml(c.text)}</div>
                     ${c.media ? `
                         <div style="position:relative; display:inline-block; margin-top:6px;">
@@ -759,7 +778,6 @@ function renderCommentsList() {
                         </div>
                     ` : ''}
                 </div>
-                ${canDeleteComment ? `<button onclick="deleteComment(${c.id})" style="background:transparent; border:none; color:#f23f43; cursor:pointer; font-size:12px; margin-left:8px;">Удалить</button>` : ''}
             </div>
         `;
     }).join('');
@@ -794,8 +812,9 @@ function submitComment() {
             id: Date.now(),
             authorId: currentUser.id,
             author: currentUser.username,
+            avatar: currentUser.avatar || '',
             text,
-            date: formatDateNow(),      // <-- реальное время
+            date: formatDateNow(),
             media: mediaUrl
         });
         textInput.value = '';
@@ -1134,14 +1153,16 @@ function showProfileView(userId) {
         ? currentUser
         : (users.find(u => u.id === userId) || {
             id: userId, username: "Участник", avatar: "", banner: "",
-            lastActive: Date.now() - 300000, level: 1
+            lastActive: Date.now() - 300000, level: 1, createdAt: null
         });
 
     const adminBadge = profileUser.isAdmin ? ' 🛡️' : '';
     document.getElementById('profUsername').textContent = profileUser.username + adminBadge;
 
+    // Дата регистрации в формате ДД.ММ.ГГГГ
+    const regDate = formatRegistrationDate(profileUser.createdAt);
     const profDateElem = document.getElementById('profDate');
-    profDateElem.innerHTML = `Уровень: <span style="color:var(--orange); font-weight:600;">${profileUser.level || 1}</span> | На форуме с 2026 года`;
+    profDateElem.innerHTML = `Уровень: <span style="color:var(--orange); font-weight:600;">${profileUser.level || 1}</span> | Дата регистрации: <span style="color:#e2e8f0;">${regDate}</span>`;
 
     const statusElem = document.getElementById('profStatus');
     if (statusElem) {
@@ -1299,7 +1320,8 @@ async function submitAuth() {
             avatar: '', banner: '',
             lastActive: Date.now(),
             xp: 0, level: 1,
-            likedPostIds: []
+            likedPostIds: [],
+            createdAt: Date.now()
         };
         users.push(newUser);
         currentUser = newUser;
@@ -1478,7 +1500,7 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-// Загружаем голосовые сообщения из localStorage (чтобы не терялись при перезагрузке)
+// Загружаем голосовые сообщения из localStorage
 try {
     const savedVoiceMsgs = localStorage.getItem('lava_voice_msgs');
     if (savedVoiceMsgs) voiceChatMessages = JSON.parse(savedVoiceMsgs);
