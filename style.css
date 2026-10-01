@@ -153,6 +153,7 @@ input, textarea {
     justify-content: space-between;
     padding: 0 20px;
     z-index: 100;
+    flex-shrink: 0;
 }
 
 .header-logo {
@@ -223,16 +224,54 @@ input, textarea {
     display: flex;
     flex: 1;
     overflow: hidden;
+    padding-left: 20px;
 }
 
+/* ==========================================
+   СВОРАЧИВАЕМАЯ БОКОВАЯ ПАНЕЛЬ
+   ========================================== */
+
 .sidebar {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    bottom: 0;
     width: 260px;
-    background: rgba(15, 15, 18, 0.75);
-    backdrop-filter: blur(12px);
+    background: rgba(15, 15, 18, 0.94);
+    backdrop-filter: blur(14px);
     border-right: 1px solid var(--border-color);
+    border-radius: 0 20px 20px 0;
     display: flex;
     flex-direction: column;
     padding: 15px;
+    z-index: 99;
+    transform: translateX(-240px);
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.4s ease;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+}
+
+.sidebar::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 60px;
+    background: rgba(255, 85, 0, 0.55);
+    border-radius: 4px;
+    transition: opacity 0.3s;
+    pointer-events: none;
+}
+
+.sidebar:hover {
+    transform: translateX(0);
+    box-shadow: 10px 0 40px rgba(255, 85, 0, 0.18);
+}
+
+.sidebar:hover::after {
+    opacity: 0;
 }
 
 .user-card {
@@ -615,7 +654,6 @@ input, textarea {
     z-index: 2;
 }
 
-/* Стили для сообщений друг другу в голосовом чате (добавлено) */
 .discord-messages-area {
     flex: 1;
     background: rgba(12, 12, 15, 0.6);
@@ -703,7 +741,7 @@ input, textarea {
     gap: 15px;
     align-items: flex-start;
     position: relative;
-    margin-top: 0; 
+    margin-top: 0;
 }
 
 .profile-avatar-large {
@@ -856,7 +894,7 @@ input, textarea {
 
 .toast.show {
     transform: translateX(-50%) translateY(0);
-} 
+}
 
 #soundcloud iframe {
     width: 100%;

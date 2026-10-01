@@ -183,7 +183,6 @@ function handlePostRealtime(payload) {
 async function savePostToSupabase(post) {
     localStorage.setItem('lava_posts', JSON.stringify(posts));
     try {
-        // Временный id — значит INSERT
         if (!post.id || post.id > 1e12) {
             const { data, error } = await supabaseClient
                 .from('posts')
@@ -225,7 +224,6 @@ async function saveUserToSupabase(user) {
     }
 }
 
-// Заглушка на случай, если где-то в старом коде остался вызов saveData()
 function saveData() {
     localStorage.setItem('lava_posts', JSON.stringify(posts));
     localStorage.setItem('lava_users', JSON.stringify(users));
@@ -359,6 +357,46 @@ function formatTimeAgo(timestamp) {
     return `был ${diffDays} ${getDeclension(diffDays, "день", "дня", "дней")} назад`;
 }
 
+// Универсальный форматтер даты: «сегодня HH:MM», «вчера HH:MM», «DD.MM.YYYY HH:MM»
+function formatDateNow() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Преобразует дату поста в человекочитаемый вид относительно текущего момента
+function formatPostDate(raw) {
+    if (!raw) return '';
+    // Если уже есть в формате DD.MM.YYYY HH:MM — распарсим
+    const m = String(raw).match(/^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/);
+    if (!m) return raw; // старое значение вроде «Только что» или пустое — оставим как есть
+
+    const postDate = new Date(
+        parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]),
+        parseInt(m[4]), parseInt(m[5])
+    );
+    const now = new Date();
+    const diffMs = now - postDate;
+    const diffMin = Math.floor(diffMs / 60000);
+
+    const pad = n => String(n).padStart(2, '0');
+    const timeStr = `${pad(postDate.getHours())}:${pad(postDate.getMinutes())}`;
+
+    if (diffMin < 1) return 'только что';
+    if (diffMin < 60) return `${diffMin} ${getDeclension(diffMin, 'минуту', 'минуты', 'минут')} назад`;
+
+    // Сегодня?
+    if (postDate.toDateString() === now.toDateString()) return `сегодня в ${timeStr}`;
+
+    // Вчера?
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    if (postDate.toDateString() === yest.toDateString()) return `вчера в ${timeStr}`;
+
+    // Полная дата
+    return `${pad(postDate.getDate())}.${pad(postDate.getMonth() + 1)}.${postDate.getFullYear()} ${timeStr}`;
+}
+
 function initActivityTracking() {
     setInterval(() => {
         if (currentUser) {
@@ -486,7 +524,7 @@ function generatePostHTML(post) {
                     <div class="post-user-avatar">${post.avatar ? `<img src="${post.avatar}">` : '👤'}</div>
                     <div>
                         <span class="post-author dark-blue-username">${escapeHtml(post.author)}</span>
-                        <span class="post-time">${escapeHtml(post.date)}</span>
+                        <span class="post-time">${escapeHtml(formatPostDate(post.date))}</span>
                     </div>
                 </div>
             </div>
@@ -606,7 +644,7 @@ function submitPost() {
             author: currentUser.username,
             authorId: currentUser.id,
             avatar: currentUser.avatar || '',
-            date: "Только что",
+            date: formatDateNow(),      // <-- реальное время
             likes: 0,
             likedBy: [],
             comments: [],
@@ -712,7 +750,7 @@ function renderCommentsList() {
         return `
             <div class="comment" style="margin-bottom:10px; display: flex; justify-content: space-between; align-items: flex-start; background: rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
                 <div style="flex:1;">
-                    <div style="font-weight:600; font-size:13px; color:#3b82f6;">${escapeHtml(c.author)} <span style="font-size:10px; color:var(--muted);">${escapeHtml(c.date || '')}</span></div>
+                    <div style="font-weight:600; font-size:13px; color:#3b82f6;">${escapeHtml(c.author)} <span style="font-size:10px; color:var(--muted);">${escapeHtml(formatPostDate(c.date || ''))}</span></div>
                     <div style="font-size:13px; color:#cbd5e1; margin-top:2px;">${escapeHtml(c.text)}</div>
                     ${c.media ? `
                         <div style="position:relative; display:inline-block; margin-top:6px;">
@@ -757,7 +795,7 @@ function submitComment() {
             authorId: currentUser.id,
             author: currentUser.username,
             text,
-            date: "Только что",
+            date: formatDateNow(),      // <-- реальное время
             media: mediaUrl
         });
         textInput.value = '';
@@ -795,7 +833,9 @@ async function deleteComment(commentId) {
         addXp(-10, false);
         showToast("Комментарий удален (-10 XP)");
     }
-}// ==========================================
+}
+
+// ==========================================
 // ГОЛОСОВЫЕ КАНАЛЫ
 // ==========================================
 

@@ -36,20 +36,9 @@ function initPresence() {
             onlineUsersCache = Object.values(state).flat();
             renderOnlineCounter();
         })
-        .on('presence', { event: 'join' }, ({ newPresences }) => {
-            newPresences.forEach(p => {
-                if (p.username && p.username !== 'Гость' && p.key !== me.key) {
-                    if (typeof showToast === 'function') showToast(`👋 ${p.username} зашёл на форум`);
-                }
-            });
-        })
-        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-            leftPresences.forEach(p => {
-                if (p.username && p.username !== 'Гость') {
-                    if (typeof showToast === 'function') showToast(`🚪 ${p.username} вышел`);
-                }
-            });
-        })
+        // Уведомления о входе/выходе отключены
+        .on('presence', { event: 'join' }, () => {})
+        .on('presence', { event: 'leave' }, () => {})
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') await trackSelf();
         });
