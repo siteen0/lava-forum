@@ -1,5 +1,5 @@
 // ==========================================
-// presence.js — счётчик онлайна (Supabase Presence)
+// presence.js — счётчик онлайна
 // ==========================================
 
 let presenceRoom = null;
@@ -74,7 +74,7 @@ function renderOnlineCounter() {
 
     el.textContent = `🟢 Онлайн: ${total}`;
     el.title = tooltip;
-    el.style.color = total > 1 ? '#23a55a' : '#94a3b8';
+    el.style.color = total > 1 ? '#34d399' : '#7c92b8';
 }
 
 setInterval(() => {

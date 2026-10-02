@@ -3,14 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LAVA Forum</title>
+    <title>Yozora × LAVA Forum</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Подключаем официальную библиотеку Supabase JS из CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body>
+<body data-theme="lava">
 
-    <!-- Анимированный лавовый фон с капельками -->
+    <!-- Ночная сцена (картинка + светлячки) — активна для Yozora -->
+    <div class="night-scene">
+        <div class="fireflies-layer" id="firefliesLayer"></div>
+    </div>
+
+    <!-- Лавовая сцена (капельки) — активна для LAVA -->
     <div class="lava-bg-container">
         <div class="lava-blob"></div>
         <div class="lava-blob"></div>
@@ -20,44 +24,47 @@
 
     <header class="main-header">
         <div class="header-logo" onclick="showForumView()">
-            <img src="logo.png" alt="LAVA Forum Logo" class="logo-image">
-            <span>LAVA Forum</span>
+            <span class="logo-icon" id="logoIcon">🔥</span>
+            <span class="logo-text" id="logoText">LAVA</span>
         </div>
         <div class="header-search">
             <input type="text" id="searchInput" placeholder="Поиск тем..." oninput="renderPosts()">
-            <span id="onlineCounter" style="margin-left:10px; color:#94a3b8; font-weight:600; font-size:13px; white-space:nowrap;">🟢 Онлайн: …</span>
+            <span id="onlineCounter" class="online-counter">🟢 Онлайн: …</span>
         </div>
         <div class="header-right" id="headerAccount">
             <button onclick="openAuth('login')">Войти</button>
-            <button class="orange-button" onclick="openAuth('register')">Регистрация</button>
+            <button class="accent-button" onclick="openAuth('register')">Регистрация</button>
         </div>
     </header>
 
     <div class="app-layout">
         <aside class="sidebar">
             <div class="user-card" onclick="protectedAction(() => showProfileView(currentUser.id))">
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                <div class="avatar-wrap">
                     <div class="avatar-container" id="sideAvatar">👤</div>
-                    <span id="sideUserLevel" style="font-size: 12px; color: #ffffff; font-weight: 500; display: none;">1</span>
+                    <span id="sideUserLevel" class="user-level">1</span>
                 </div>
                 <div class="user-info">
-                    <span class="username dark-blue-username" id="sideUsername">Гость</span>
+                    <span class="username" id="sideUsername">Гость</span>
                     <span class="user-status" id="userStatusText">В сети</span>
                 </div>
             </div>
 
             <nav class="sidebar-nav">
-                <a class="nav-item active" onclick="showForumView()">💬 Форум</a>
-                <a class="nav-item" onclick="showVoiceView()">🔊 Голосовые каналы</a>
-                <a class="nav-item" onclick="openLikedView()">❤️ Понравившееся</a>
-                <a class="nav-item" onclick="openXP()">⭐ Уровень</a>
-                <a class="nav-item" onclick="openSystem()">⚙ Система</a>
+                <a class="nav-item active" onclick="showForumView()"><span class="nav-icon">💬</span> Форум</a>
+                <a class="nav-item" onclick="showVoiceView()"><span class="nav-icon">🔊</span> Голосовые</a>
+                <a class="nav-item" onclick="openLikedView()"><span class="nav-icon">❤</span> Понравившееся</a>
+                <a class="nav-item" onclick="openXP()"><span class="nav-icon">⭐</span> Уровень</a>
+                <a class="nav-item" onclick="openSystem()"><span class="nav-icon">⚙</span> Система</a>
             </nav>
 
             <div class="sidebar-footer">
-                <div style="display: flex; gap: 8px; align-items: center; width: 100%;">
-                    <button class="gear-btn" onclick="openAdminModal()" title="Админ панель">⚙</button>
-                    <button class="orange-button" id="accountButton" onclick="openAuth('login')" style="flex: 1;">Войти</button>
+                <div class="sidebar-footer-row">
+                    <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+                        <div class="theme-toggle-half lava-half"></div>
+                        <div class="theme-toggle-half yozora-half"></div>
+                    </button>
+                    <button class="accent-button" id="accountButton" onclick="openAuth('login')">Войти</button>
                 </div>
             </div>
         </aside>
@@ -69,7 +76,7 @@
                         <button class="filter active" onclick="setFilter('latest', this)">Свежие</button>
                         <button class="filter" onclick="setFilter('popular', this)">Популярные</button>
                     </div>
-                    <button class="orange-button" onclick="protectedAction(createPost)">+ Создать тему</button>
+                    <button class="accent-button" onclick="protectedAction(createPost)">+ Создать тему</button>
                 </div>
 
                 <div class="forum-stats">
@@ -79,26 +86,25 @@
                 <div class="posts-list" id="posts"></div>
             </div>
 
-            <!-- Вкладка Понравившееся -->
             <div id="likedView" class="view-section" style="display: none;">
-                <h2>Понравившиеся темы</h2>
+                <h2 class="section-title">❤ Понравившиеся темы</h2>
                 <div class="posts-list" id="likedPostsList"></div>
             </div>
 
             <div id="voiceView" class="view-section" style="display: none;">
                 <div class="discord-container">
                     <div class="discord-sidebar">
-                        <div class="discord-server-title">LAVA Voice Hub</div>
+                        <div class="discord-server-title" id="voiceServerTitle">🔥 LAVA Voice</div>
                         <div id="voiceChannelsList" class="discord-channels-list"></div>
                     </div>
                     <div class="discord-main-area">
                         <div class="discord-top-bar" id="activeVoiceHeader"># Выберите голосовой канал</div>
-                        
+
                         <div class="discord-content-body">
                             <div class="discord-grid-area" id="voiceGridArea" style="display: none;">
                                 <div class="discord-users-grid" id="discordUsersGrid"></div>
                             </div>
-                            
+
                             <div class="discord-messages-area" id="discordMessages" style="display: none;"></div>
                         </div>
 
@@ -111,7 +117,7 @@
                             <button id="micBtn" onclick="toggleMuteMic()">🎤 Микрофон</button>
                             <button id="deafenBtn" onclick="toggleDeafen()">🎧 Звук</button>
                             <button id="camBtn" onclick="toggleCam()">📷 Камера</button>
-                            <button onclick="toggleVoiceFullscreen()">🛜 На весь экран</button>
+                            <button onclick="toggleVoiceFullscreen()">🌌 На весь экран</button>
                             <button class="disconnect-btn" onclick="disconnectVoice()">📞 Отключиться</button>
                         </div>
                     </div>
@@ -124,14 +130,14 @@
                     <div class="profile-content-body">
                         <div class="profile-avatar-large" id="profAvatar">👤</div>
                         <div class="profile-details">
-                            <h2 class="dark-blue-username" id="profUsername">Имя</h2>
-                            <p id="profDate" style="color:var(--muted); font-size:13px;"></p>
-                            <p id="profStatus" style="font-size: 13px; margin-top: 4px; color: var(--muted);"></p>
-                            <button class="orange-button" id="editProfBtn" onclick="openEditProfileModal()" style="margin-top:10px; display:none;">Редактировать профиль</button>
+                            <h2 class="profile-username" id="profUsername">Имя</h2>
+                            <p id="profDate" class="profile-meta"></p>
+                            <p id="profStatus" class="profile-status"></p>
+                            <button class="accent-button" id="editProfBtn" onclick="openEditProfileModal()" style="margin-top:10px; display:none;">Редактировать профиль</button>
                         </div>
                     </div>
                     <div class="profile-user-posts">
-                        <h3>Темы пользователя</h3>
+                        <h3 class="section-subtitle">Темы пользователя</h3>
                         <div class="posts-list" id="profileUserPostsList"></div>
                     </div>
                 </div>
@@ -139,17 +145,15 @@
         </main>
     </div>
 
-    <!-- Виджет плеера в углу -->
     <div class="music-widget" onclick="openModal('soundModal')">
         <div class="music-square">🎵</div>
         <div class="music-info">
-            <span class="music-title" id="currentTrackLabel">SoundCloud Player</span>
+            <span class="music-title" id="currentTrackLabel">SoundCloud</span>
             <span class="music-sub">Нажмите для управления</span>
         </div>
         <button class="music-play-btn" onclick="event.stopPropagation(); openModal('soundModal')">🎧</button>
     </div>
 
-    <!-- Всплывающая плашка уровня -->
     <div class="xp-floating-popup" id="xpPopup">
         <div class="xp-popup-title" id="xpPopupTitle">Ваш уровень: 1</div>
         <div class="xp-bar-container">
@@ -157,62 +161,57 @@
         </div>
     </div>
 
-    <!-- Контекстное меню постов -->
     <div id="postContextMenu" class="custom-context-menu">
         <div class="context-menu-item" onclick="openReportModalFromContext()">⚠ Пожаловаться</div>
     </div>
 
-    <!-- Модальное окно Админа -->
     <div class="modal-overlay" id="adminModal">
         <div class="modal-window">
             <h3>Вход в Админ-панель</h3>
             <input type="text" id="adminLoginInput" placeholder="Логин">
             <input type="password" id="adminPassInput" placeholder="Пароль">
             <div class="modal-buttons">
-                <button class="orange-button" onclick="submitAdminAuth()">Войти как админ</button>
+                <button class="accent-button" onclick="submitAdminAuth()">Войти как админ</button>
                 <button onclick="closeModal('adminModal')">Отмена</button>
             </div>
         </div>
     </div>
 
-    <!-- Модальное окно Авторизации/Регистрации -->
     <div class="modal-overlay" id="authModal">
         <div class="modal-window">
             <h3 id="authTitle">Авторизация</h3>
             <input type="text" id="authUsername" placeholder="Имя пользователя">
             <input type="email" id="authEmail" placeholder="Почта (@gmail.com)" style="display:none;">
             <input type="password" id="authPassword" placeholder="Пароль">
-            <div class="modal-buttons" style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="modal-buttons modal-buttons-split">
                 <button id="authGearBtn" class="gear-btn" onclick="openForgotPasswordModal()" style="display:none;" title="Забыли пароль?">⚙</button>
-                <div style="display: flex; gap: 8px; margin-left: auto;">
-                    <button class="orange-button" onclick="submitAuth()">Подтвердить</button>
+                <div class="modal-buttons-right">
+                    <button class="accent-button" onclick="submitAuth()">Подтвердить</button>
                     <button onclick="closeModal('authModal')">Отмена</button>
                 </div>
             </div>
-            <p id="authSwitch" style="margin-top:12px; font-size:13px; text-align:center;"></p>
+            <p id="authSwitch" class="auth-switch"></p>
         </div>
     </div>
 
-    <!-- Модальное окно: Забыли пароль -->
     <div class="modal-overlay" id="forgotPasswordModal">
         <div class="modal-window">
             <h3>Восстановление пароля</h3>
             <input type="email" id="forgotEmailInput" placeholder="Введите вашу почту (@gmail.com)">
             <div class="modal-buttons">
-                <button class="orange-button" onclick="sendRecoveryCode()">Отправить код</button>
+                <button class="accent-button" onclick="sendRecoveryCode()">Отправить код</button>
                 <button onclick="closeModal('forgotPasswordModal')">Отмена</button>
             </div>
         </div>
     </div>
 
-    <!-- Модальное окно: Ввод кода подтверждения -->
     <div class="modal-overlay" id="verifyCodeModal">
         <div class="modal-window">
             <h3>Подтверждение почты</h3>
-            <p style="font-size:13px; color:var(--muted);">Введите код, отправленный на вашу почту:</p>
+            <p class="modal-hint">Введите код, отправленный на вашу почту:</p>
             <input type="text" id="verifyCodeInput" placeholder="Код подтверждения">
             <div class="modal-buttons">
-                <button class="orange-button" onclick="confirmRecoveryCode()">Подтвердить</button>
+                <button class="accent-button" onclick="confirmRecoveryCode()">Подтвердить</button>
                 <button onclick="closeModal('verifyCodeModal')">Отмена</button>
             </div>
         </div>
@@ -223,15 +222,15 @@
             <h3>Создать новую тему</h3>
             <input type="text" id="postTitle" placeholder="Заголовок темы">
             <textarea id="postText" placeholder="Текст сообщения..."></textarea>
-            
+
             <input type="file" id="postMediaFile" accept="image/*" style="display:none;" onchange="document.getElementById('postMediaName').textContent = this.files[0]?.name || ''">
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="modal-file-row">
                 <button type="button" onclick="document.getElementById('postMediaFile').click()">📎 Прикрепить фото</button>
-                <span id="postMediaName" style="font-size:12px; color:var(--orange);"></span>
+                <span id="postMediaName" class="modal-file-name"></span>
             </div>
 
             <div class="modal-buttons">
-                <button class="orange-button" onclick="submitPost()">Опубликовать</button>
+                <button class="accent-button" onclick="submitPost()">Опубликовать</button>
                 <button onclick="closeModal('postModal')">Отмена</button>
             </div>
         </div>
@@ -240,15 +239,15 @@
     <div class="modal-overlay" id="commentsModal">
         <div class="modal-window large-modal">
             <h3 id="commentsTitle">Комментарии</h3>
-            <div class="comments-list-box" id="commentsList" style="max-height: 250px; overflow-y: auto;"></div>
-            <div class="comment-input-row" style="display:flex; gap:8px; margin-top:10px; align-items: center;">
-                <input type="text" id="commentText" placeholder="Написать комментарий..." style="flex:1;">
+            <div class="comments-list-box" id="commentsList"></div>
+            <div class="comment-input-row">
+                <input type="text" id="commentText" placeholder="Написать комментарий...">
                 <input type="file" id="commentMediaFile" accept="image/*" style="display:none;" onchange="document.getElementById('commentMediaName').textContent = this.files[0]?.name || ''">
                 <button type="button" onclick="document.getElementById('commentMediaFile').click()">📎</button>
-                <button class="orange-button" onclick="submitComment()">Отправить</button>
+                <button class="accent-button" onclick="submitComment()">Отправить</button>
             </div>
-            <span id="commentMediaName" style="font-size:11px; color:var(--orange); display:block; margin-top:4px;"></span>
-            <div style="text-align:right; margin-top:10px;">
+            <span id="commentMediaName" class="modal-file-name"></span>
+            <div class="modal-close-row">
                 <button onclick="closeModal('commentsModal')">Закрыть</button>
             </div>
         </div>
@@ -257,14 +256,14 @@
     <div class="modal-overlay" id="editProfileModal">
         <div class="modal-window">
             <h3>Редактировать профиль</h3>
-            <label style="font-size:12px; color:var(--muted);">Новый никнейм:</label>
+            <label class="modal-label">Новый никнейм:</label>
             <input type="text" id="editUsernameInput">
-            <label style="font-size:12px; color:var(--muted); margin-top:8px; display:block;">Аватар:</label>
+            <label class="modal-label">Аватар:</label>
             <input type="file" id="editAvatarFile" accept="image/*">
-            <label style="font-size:12px; color:var(--muted); margin-top:8px; display:block;">Баннер профиля:</label>
+            <label class="modal-label">Баннер профиля:</label>
             <input type="file" id="editBannerFile" accept="image/*">
             <div class="modal-buttons" style="margin-top:15px;">
-                <button class="orange-button" onclick="saveProfileChanges()">Сохранить</button>
+                <button class="accent-button" onclick="saveProfileChanges()">Сохранить</button>
                 <button onclick="closeModal('editProfileModal')">Отмена</button>
             </div>
         </div>
@@ -273,17 +272,17 @@
     <div class="modal-overlay" id="voiceUserModal">
         <div class="modal-window">
             <h3 id="vModalUsername">Участник</h3>
-            <div style="display:flex; flex-direction:column; gap:8px; margin-top:15px;">
+            <div class="voice-user-actions">
                 <button onclick="vModalGoProfile()">Профиль</button>
                 <button onclick="vModalAddFriend()">Добавить в друзья</button>
-                
-                <div id="adminVoiceControls" style="display:none; flex-direction:column; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:5px;">
-                    <span style="font-size:12px; color:var(--orange); font-weight:600;">🛡️ Админ действия:</span>
-                    <button onclick="adminToggleUserMic()" style="color:#eab308;">🔇 Выключить микрофон</button>
-                    <button onclick="adminToggleUserSound()" style="color:#eab308;">🎧 Выключить звук</button>
+
+                <div id="adminVoiceControls" class="admin-voice-controls" style="display:none;">
+                    <span class="admin-voice-title">🛡️ Админ действия:</span>
+                    <button onclick="adminToggleUserMic()">🔇 Выключить микрофон</button>
+                    <button onclick="adminToggleUserSound()">🎧 Выключить звук</button>
                 </div>
 
-                <button onclick="vModalReport()" style="color:#f23f43;">Пожаловаться</button>
+                <button onclick="vModalReport()" class="danger-text">Пожаловаться</button>
             </div>
             <div class="modal-buttons" style="margin-top:15px;">
                 <button onclick="closeModal('voiceUserModal')">Закрыть</button>
@@ -291,41 +290,38 @@
         </div>
     </div>
 
-    <!-- Модальное окно SoundCloud плеера -->
     <div class="modal-overlay" id="soundModal">
-        <div class="modal-window" style="width: 460px; max-width: 95%;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0;">🎵 SoundCloud Player</h3>
-                <button onclick="closeModal('soundModal')" style="background:transparent; border:none; color:#fff; font-size:16px; cursor:pointer;">✕</button>
+        <div class="modal-window sound-modal-window">
+            <div class="sound-modal-header">
+                <h3>🎵 SoundCloud Player</h3>
+                <button onclick="closeModal('soundModal')" class="close-x">✕</button>
             </div>
 
-            <div class="input" style="display: flex; gap: 8px;">
-                <input id="url" type="text" placeholder="Вставь ссылку SoundCloud" style="flex: 1; min-width: 0; padding: 10px; border: 0; border-radius: 8px; outline: none; background: #303030; color: white;">
-                <button class="orange-button" onclick="addTrack()">Добавить</button>
+            <div class="sound-input-row">
+                <input id="url" type="text" placeholder="Вставь ссылку SoundCloud">
+                <button class="accent-button" onclick="addTrack()">Добавить</button>
             </div>
 
-            <div id="error" class="error" style="margin-top: 6px; text-align: center; color: #ff5555; font-size: 13px;"></div>
+            <div id="error" class="sound-error"></div>
 
-            <div id="title" style="margin: 12px 0; text-align: center; color: #ccc; font-size: 14px;">
-                Ничего не играет
-            </div>
+            <div id="title" class="sound-title">Ничего не играет</div>
 
             <div id="soundcloud"></div>
 
-            <div class="volume-control-container" style="display: flex; align-items: center; gap: 10px; margin: 10px 0; padding: 0 5px;">
-                <span style="font-size: 14px;">🔊</span>
-                <input type="range" id="volumeBar" min="0" max="100" value="80" oninput="changeVolume(this.value)" style="flex: 1; cursor: pointer;">
-                <span id="volumeVal" style="font-size: 12px; color: var(--muted); width: 30px; text-align: right;">80%</span>
+            <div class="volume-control-container">
+                <span>🔊</span>
+                <input type="range" id="volumeBar" min="0" max="100" value="80" oninput="changeVolume(this.value)">
+                <span id="volumeVal" class="volume-val">80%</span>
             </div>
 
-            <div class="controls" style="display: flex; justify-content: center; gap: 12px; margin: 15px 0;">
-                <button onclick="previous()" style="width: 45px; height: 45px; border-radius: 50%; background: #303030; color: #fff; cursor: pointer; border:0;">⏮</button>
-                <button id="play" onclick="togglePlaySC()" style="width: 55px; height: 55px; border-radius: 50%; background: var(--orange); color: #fff; cursor: pointer; border:0; font-size: 18px;">▶</button>
-                <button onclick="next()" style="width: 45px; height: 45px; border-radius: 50%; background: #303030; color: #fff; cursor: pointer; border:0;">⏭</button>
+            <div class="sound-controls">
+                <button onclick="previous()" class="sound-btn">⏮</button>
+                <button id="play" onclick="togglePlaySC()" class="sound-btn sound-play">▶</button>
+                <button onclick="next()" class="sound-btn">⏭</button>
             </div>
 
-            <div class="queue" style="max-height: 150px; overflow-y: auto;">
-                <b style="font-size: 13px;">Очередь</b>
+            <div class="sound-queue">
+                <b class="sound-queue-title">Очередь</b>
                 <div id="queue"></div>
             </div>
         </div>
@@ -336,7 +332,7 @@
             <h3>Жалоба</h3>
             <textarea placeholder="Опишите причину жалобы..."></textarea>
             <div class="modal-buttons">
-                <button class="orange-button" onclick="confirmReport()">Отправить</button>
+                <button class="accent-button" onclick="confirmReport()">Отправить</button>
                 <button onclick="closeModal('reportModal')">Отмена</button>
             </div>
         </div>
@@ -345,8 +341,14 @@
     <div class="modal-overlay" id="systemModal">
         <div class="modal-window">
             <h3>Системная информация</h3>
-            <p style="font-size:13px; color:var(--muted); line-height:1.5;">LAVA Hub v3.1. Онлайн синхронизация через Supabase Realtime.</p>
-            <div class="modal-buttons" style="margin-top:15px;">
+            <p class="modal-hint">
+                <b>Yozora × LAVA Forum</b> v2.0<br>
+                Ночной/лавовый форум на Supabase Realtime.<br><br>
+                <b>Последнее обновление:</b><br>
+                v2.0 — переключатель тем LAVA/Yozora, реальное время постов, дата регистрации, аватарки в комментариях, лайк-анимация, адаптация под мобильные.
+            </p>
+            <div class="modal-buttons" style="margin-top:15px; justify-content: space-between;">
+                <button onclick="openAdminModal()" style="border-color: var(--accent); color: var(--accent);">🛡️ Админ-панель</button>
                 <button onclick="closeModal('systemModal')">Закрыть</button>
             </div>
         </div>

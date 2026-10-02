@@ -1,5 +1,5 @@
 // ==========================================
-// LAVA Forum — script.js (Supabase edition)
+// Yozora × LAVA Forum — script.js
 // ==========================================
 
 const SUPABASE_URL = 'https://dveuaxwmdwblimcuxukg.supabase.co';
@@ -32,14 +32,48 @@ let widget = null;
 
 let posts = [];
 let users = [];
+let ignoreRealtimeUntil = 0;
+
+// ==========================================
+// ПЕРЕКЛЮЧАТЕЛЬ ТЕМ
+// ==========================================
+
+function applyTheme(theme) {
+    if (theme !== 'lava' && theme !== 'yozora') theme = 'lava';
+    document.body.setAttribute('data-theme', theme);
+
+    // Меняем логотип
+    const logoIcon = document.getElementById('logoIcon');
+    const logoText = document.getElementById('logoText');
+    if (logoIcon) logoIcon.textContent = theme === 'lava' ? '🔥' : '🌌';
+    if (logoText) logoText.textContent = theme === 'lava' ? 'LAVA' : 'Yozora';
+
+    // Голосовой заголовок
+    const voiceTitle = document.getElementById('voiceServerTitle');
+    if (voiceTitle) voiceTitle.textContent = theme === 'lava' ? '🔥 LAVA Voice' : '🌌 Yozora Voice';
+
+    localStorage.setItem('forum_theme', theme);
+}
+
+function toggleTheme() {
+    const current = document.body.getAttribute('data-theme') || 'lava';
+    const next = current === 'lava' ? 'yozora' : 'lava';
+    applyTheme(next);
+    showToast(next === 'lava' ? '🔥 Тема LAVA' : '🌌 Тема Yozora');
+}
 
 // ==========================================
 // ЗАГРУЗКА / СОХРАНЕНИЕ
 // ==========================================
 
 window.onload = async function() {
+    // Загружаем сохранённую тему
+    const savedTheme = localStorage.getItem('forum_theme') || 'lava';
+    applyTheme(savedTheme);
+
     loadUserFromStorage();
     initLavaDrips();
+    initNightScene();
     initActivityTracking();
     initVoiceXpTimer();
 
@@ -72,6 +106,51 @@ window.onload = async function() {
         if (menu) menu.style.display = 'none';
     });
 };
+
+// ==========================================
+// ФОНОВЫЕ ЭФФЕКТЫ
+// ==========================================
+
+function initLavaDrips() {
+    const container = document.getElementById('lavaDripsLayer');
+    if (!container) return;
+    for (let i = 0; i < 22; i++) {
+        const drip = document.createElement('div');
+        drip.className = 'lava-drip';
+        drip.style.left = `${Math.random() * 100}%`;
+        drip.style.animationDuration = `${5 + Math.random() * 9}s`;
+        drip.style.animationDelay = `${Math.random() * 10}s`;
+        drip.style.width = `${2 + Math.random() * 3}px`;
+        container.appendChild(drip);
+    }
+}
+
+function initNightScene() {
+    const layer = document.getElementById('firefliesLayer');
+    if (!layer) return;
+    const count = 14;
+    for (let i = 0; i < count; i++) {
+        const fly = document.createElement('div');
+        fly.className = 'firefly';
+        const x = Math.random() * 100;
+        const y = 60 + Math.random() * 40;
+        const riseDuration = 25 + Math.random() * 20;
+        const flickerDelay = Math.random() * 4;
+        const flickerDur = 3 + Math.random() * 3;
+        fly.style.left = x + '%';
+        fly.style.top = y + '%';
+        fly.style.animationDuration = `${riseDuration}s, ${flickerDur}s`;
+        fly.style.animationDelay = `${Math.random() * -20}s, ${flickerDelay}s`;
+        const size = 3 + Math.random() * 3;
+        fly.style.width = size + 'px';
+        fly.style.height = size + 'px';
+        layer.appendChild(fly);
+    }
+}
+
+// ==========================================
+// USER / POST ROW
+// ==========================================
 
 function rowToUser(row) {
     return {
@@ -166,6 +245,19 @@ function postToRow(p) {
 }
 
 function handlePostRealtime(payload) {
+    if (Date.now() < ignoreRealtimeUntil) {
+        if (payload.new) {
+            const evt = payload.eventType;
+            if (evt === 'INSERT' || evt === 'UPDATE') {
+                const incoming = rowToPost(payload.new);
+                const idx = posts.findIndex(p => p.id === incoming.id);
+                if (idx > -1) posts[idx] = incoming;
+                else posts.unshift(incoming);
+            }
+        }
+        return;
+    }
+
     const evt = payload.eventType;
     if (evt === 'INSERT' || evt === 'UPDATE') {
         if (!payload.new) return;
@@ -290,7 +382,7 @@ async function exitAdminMode() {
 }
 
 // ==========================================
-// XP / АКТИВНОСТЬ
+// XP
 // ==========================================
 
 function addXp(amount, showNotification = false) {
@@ -390,7 +482,6 @@ function formatPostDate(raw) {
     return `${pad(postDate.getDate())}.${pad(postDate.getMonth() + 1)}.${postDate.getFullYear()} ${timeStr}`;
 }
 
-// Дата регистрации — формат ДД.ММ.ГГГГ
 function formatRegistrationDate(ts) {
     if (!ts) return '—';
     const d = new Date(ts);
@@ -408,20 +499,6 @@ function initActivityTracking() {
         const statusElem = document.getElementById('userStatusText');
         if (statusElem) statusElem.textContent = currentUser ? "В сети" : "Гость";
     }, 1000);
-}
-
-function initLavaDrips() {
-    const container = document.getElementById('lavaDripsLayer');
-    if (!container) return;
-    for (let i = 0; i < 22; i++) {
-        const drip = document.createElement('div');
-        drip.className = 'lava-drip';
-        drip.style.left = `${Math.random() * 100}%`;
-        drip.style.animationDuration = `${5 + Math.random() * 9}s`;
-        drip.style.animationDelay = `${Math.random() * 10}s`;
-        drip.style.width = `${2 + Math.random() * 3}px`;
-        container.appendChild(drip);
-    }
 }
 
 function loadUserFromStorage() {
@@ -446,7 +523,10 @@ function updateHeaderAndSidebar() {
         const adminBadge = currentUser.isAdmin ? ' 🛡️' : '';
         sideName.textContent = currentUser.username + adminBadge;
         sideAvatar.innerHTML = currentUser.avatar ? `<img src="${currentUser.avatar}">` : '👤';
-        if (sideLevel) { sideLevel.textContent = currentUser.level || 1; sideLevel.style.display = 'block'; }
+        if (sideLevel) {
+            sideLevel.textContent = currentUser.level || 1;
+            sideLevel.style.display = 'inline-block';
+        }
 
         if (currentUser.isAdmin) {
             accBtn.textContent = 'Выйти из админ режима';
@@ -457,7 +537,7 @@ function updateHeaderAndSidebar() {
         }
 
         headerAcc.innerHTML = `
-            <button class="orange-button" onclick="protectedAction(() => showProfileView(currentUser.id))">Профиль ${adminBadge}</button>
+            <button class="accent-button" onclick="protectedAction(() => showProfileView(currentUser.id))">Профиль ${adminBadge}</button>
             <button onclick="logout()">Выйти</button>
         `;
     } else {
@@ -469,7 +549,7 @@ function updateHeaderAndSidebar() {
 
         headerAcc.innerHTML = `
             <button onclick="openAuth('login')">Войти</button>
-            <button class="orange-button" onclick="openAuth('register')">Регистрация</button>
+            <button class="accent-button" onclick="openAuth('register')">Регистрация</button>
         `;
     }
 
@@ -520,12 +600,12 @@ function generatePostHTML(post) {
     const canDeleteMedia = currentUser && currentUser.isAdmin && post.media;
 
     return `
-        <div class="post" oncontextmenu="handlePostContextMenu(event, ${post.id})">
+        <div class="post" data-post-id="${post.id}" oncontextmenu="handlePostContextMenu(event, ${post.id})">
             <div class="post-head">
                 <div class="post-author-row" onclick="showProfileView('${post.authorId}')">
                     <div class="post-user-avatar">${post.avatar ? `<img src="${post.avatar}">` : '👤'}</div>
                     <div>
-                        <span class="post-author dark-blue-username">${escapeHtml(post.author)}</span>
+                        <span class="post-author">${escapeHtml(post.author)}</span>
                         <span class="post-time">${escapeHtml(formatPostDate(post.date))}</span>
                     </div>
                 </div>
@@ -535,16 +615,16 @@ function generatePostHTML(post) {
             ${post.media ? `
                 <div style="position:relative; display:inline-block; max-width:100%;">
                     <img src="${post.media}" class="post-media">
-                    ${canDeleteMedia ? `<button onclick="deletePostImage(${post.id})" style="position:absolute; top:8px; right:8px; background:rgba(242,63,67,0.9); color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑 Удалить фото</button>` : ''}
+                    ${canDeleteMedia ? `<button onclick="deletePostImage(${post.id})" style="position:absolute; top:8px; right:8px; background:rgba(244,113,181,0.9); color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑 Удалить фото</button>` : ''}
                 </div>
             ` : ''}
             <div class="post-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 10px;">
                 <div class="post-actions" style="margin-bottom: 0;">
-                    <button onclick="toggleLike(${post.id})" class="like-btn ${isLikedByMe ? 'liked' : ''}">
-                        <span class="heart-icon" style="${isLikedByMe ? 'color: #f23f43;' : ''}">❤</span> ${post.likes}
+                    <button onclick="toggleLike(${post.id}, this)" class="like-btn ${isLikedByMe ? 'liked' : ''}">
+                        <span class="heart-icon">❤</span> <span class="like-count">${post.likes}</span>
                     </button>
                     <button onclick="openComments(${post.id})">💬 Комментарии (${post.comments ? post.comments.length : 0})</button>
-                    ${canDeletePost ? `<button onclick="deletePost(${post.id})" style="color:#f23f43;">🗑 Удалить</button>` : ''}
+                    ${canDeletePost ? `<button onclick="deletePost(${post.id})" style="color:#f471b5;">🗑 Удалить</button>` : ''}
                 </div>
             </div>
         </div>
@@ -581,7 +661,7 @@ function renderPosts() {
     if (topicCountElem) topicCountElem.textContent = `${filtered.length} тем`;
 
     if (filtered.length === 0) {
-        container.innerHTML = `<div style="text-align:center; color:var(--muted); padding:30px;">Тем пока нет</div>`;
+        container.innerHTML = `<div style="text-align:center; color:var(--muted); padding:40px; font-size:14px;">🔥 Пока тихо... Создай первую тему</div>`;
         return;
     }
     container.innerHTML = filtered.map(generatePostHTML).join('');
@@ -692,7 +772,7 @@ async function deletePost(id) {
     showToast("Тема удалена");
 }
 
-async function toggleLike(postId) {
+async function toggleLike(postId, btn) {
     if (!currentUser) { openAuth('login'); return; }
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -700,7 +780,9 @@ async function toggleLike(postId) {
     if (!currentUser.likedPostIds) currentUser.likedPostIds = [];
 
     const index = post.likedBy.indexOf(currentUser.id);
-    if (index > -1) {
+    const wasLiked = index > -1;
+
+    if (wasLiked) {
         post.likedBy.splice(index, 1);
         post.likes--;
         currentUser.likedPostIds = currentUser.likedPostIds.filter(id => id !== postId);
@@ -714,19 +796,33 @@ async function toggleLike(postId) {
         showToast("❤ Лайк поставлен! (+10 XP)");
     }
 
+    ignoreRealtimeUntil = Date.now() + 1200;
+
     const idx = users.findIndex(u => u.id === currentUser.id);
     if (idx > -1) users[idx] = currentUser;
     localStorage.setItem('lava_current_user', JSON.stringify(currentUser));
     await savePostToSupabase(post);
     await saveUserToSupabase(currentUser);
 
-    renderPosts();
+    if (btn) {
+        btn.classList.toggle('liked', !wasLiked);
+        const countEl = btn.querySelector('.like-count');
+        if (countEl) countEl.textContent = post.likes;
+
+        if (!wasLiked) {
+            btn.classList.remove('flash');
+            void btn.offsetWidth;
+            btn.classList.add('flash');
+            setTimeout(() => btn.classList.remove('flash'), 600);
+        }
+    }
+
     if (currentView === 'likedView') renderLikedPosts();
     if (currentView === 'profileView') showProfileView(currentUser.id);
 }
 
 // ==========================================
-// КОММЕНТАРИИ (с аватаркой автора)
+// КОММЕНТАРИИ
 // ==========================================
 
 let currentCommentPostId = null;
@@ -743,14 +839,13 @@ function renderCommentsList() {
     const container = document.getElementById('commentsList');
 
     if (!post.comments || post.comments.length === 0) {
-        container.innerHTML = `<div style="color:var(--muted); text-align:center;">Нет комментариев</div>`;
+        container.innerHTML = `<div style="color:var(--muted); text-align:center; padding:20px;">Пока нет комментариев</div>`;
         return;
     }
     container.innerHTML = post.comments.map(c => {
         const canDeleteComment = currentUser && (currentUser.id === c.authorId || currentUser.isAdmin);
         const canDeleteMedia = currentUser && currentUser.isAdmin && c.media;
 
-        // Ищем аватар автора комментария в users (или берём из самого комментария)
         let avatar = c.avatar || '';
         if (!avatar) {
             const u = users.find(x => x.id === c.authorId);
@@ -758,23 +853,23 @@ function renderCommentsList() {
         }
 
         return `
-            <div class="comment" style="margin-bottom:10px; display: flex; gap:10px; align-items: flex-start; background: rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
-                <div class="comment-avatar" style="width:36px; height:36px; flex-shrink:0; border-radius:50%; overflow:hidden; background:#2b2d31; display:flex; align-items:center; justify-content:center; font-size:16px;">
+            <div class="comment" style="margin-bottom:10px; display: flex; gap:10px; align-items: flex-start; background: var(--accent-glow); padding:10px 12px; border-radius:10px; border: 1px solid var(--border);">
+                <div class="comment-avatar" style="width:38px; height:38px; flex-shrink:0; border-radius:50%; overflow:hidden; background:var(--panel-solid); display:flex; align-items:center; justify-content:center; font-size:16px; border: 2px solid var(--accent);">
                     ${avatar ? `<img src="${avatar}" style="width:100%;height:100%;object-fit:cover;">` : '👤'}
                 </div>
                 <div style="flex:1;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                        <div style="font-weight:600; font-size:13px; color:#3b82f6;">
+                        <div style="font-weight:700; font-size:13px; color:var(--accent-bright);">
                             ${escapeHtml(c.author)}
                             <span style="font-size:10px; color:var(--muted); font-weight:400; margin-left:6px;">${escapeHtml(formatPostDate(c.date || ''))}</span>
                         </div>
-                        ${canDeleteComment ? `<button onclick="deleteComment(${c.id})" style="background:transparent; border:none; color:#f23f43; cursor:pointer; font-size:12px;">Удалить</button>` : ''}
+                        ${canDeleteComment ? `<button onclick="deleteComment(${c.id})" style="background:transparent; border:none; color:var(--danger); cursor:pointer; font-size:12px;">Удалить</button>` : ''}
                     </div>
-                    <div style="font-size:13px; color:#cbd5e1; margin-top:2px;">${escapeHtml(c.text)}</div>
+                    <div style="font-size:13px; color:var(--text-soft); margin-top:3px;">${escapeHtml(c.text)}</div>
                     ${c.media ? `
                         <div style="position:relative; display:inline-block; margin-top:6px;">
                             <img src="${c.media}" class="comment-media">
-                            ${canDeleteMedia ? `<button onclick="deleteCommentImage(${post.id}, ${c.id})" style="position:absolute; top:4px; right:4px; background:rgba(242,63,67,0.9); color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">🗑 Фото</button>` : ''}
+                            ${canDeleteMedia ? `<button onclick="deleteCommentImage(${post.id}, ${c.id})" style="position:absolute; top:4px; right:4px; background:rgba(244,113,181,0.9); color:#fff; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">🗑 Фото</button>` : ''}
                         </div>
                     ` : ''}
                 </div>
@@ -1024,7 +1119,7 @@ function toggleMuteMic() {
         localStream.getAudioTracks()[0].enabled = !isMuted;
     }
     const btn = document.getElementById('micBtn');
-    btn.style.background = isMuted ? '#f23f43' : '#2b2d31';
+    btn.style.background = isMuted ? '#f471b5' : 'rgba(255,255,255,0.05)';
     btn.textContent = isMuted ? '🔇 Выкл. микр' : '🎤 Микрофон';
     renderVoiceGrid();
 }
@@ -1032,7 +1127,7 @@ function toggleMuteMic() {
 function toggleDeafen() {
     isDeafened = !isDeafened;
     const btn = document.getElementById('deafenBtn');
-    btn.style.background = isDeafened ? '#f23f43' : '#2b2d31';
+    btn.style.background = isDeafened ? '#f471b5' : 'rgba(255,255,255,0.05)';
     if (localStream && localStream.getAudioTracks().length > 0) {
         localStream.getAudioTracks()[0].enabled = !isDeafened;
     }
@@ -1053,11 +1148,11 @@ async function toggleCam() {
             } else {
                 localStream = videoStream;
             }
-            btn.style.background = '#23a55a';
+            btn.style.background = '#34d399';
             showToast("📷 Камера включена");
         } catch (err) {
             isCamOn = false;
-            btn.style.background = '#2b2d31';
+            btn.style.background = 'rgba(255,255,255,0.05)';
             showToast("Не удалось подключить камеру");
         }
     } else {
@@ -1067,7 +1162,7 @@ async function toggleCam() {
                 localStream.removeTrack(t);
             });
         }
-        btn.style.background = '#2b2d31';
+        btn.style.background = 'rgba(255,255,255,0.05)';
         showToast("📷 Камера выключена");
     }
     renderVoiceGrid();
@@ -1096,7 +1191,7 @@ function renderVoiceChatMessages() {
     container.innerHTML = msgs.length === 0
         ? `<div style="color:var(--muted); font-size:13px;">Нет сообщений в чате канала</div>`
         : msgs.map(m => `
-            <div class="discord-msg-card"><span style="font-weight:600; color:#3b82f6;">${escapeHtml(m.author)}:</span> ${escapeHtml(m.text)}</div>
+            <div class="discord-msg-card"><span style="font-weight:700; color:var(--accent-bright);">${escapeHtml(m.author)}:</span> ${escapeHtml(m.text)}</div>
         `).join('');
     container.scrollTop = container.scrollHeight;
 }
@@ -1159,15 +1254,14 @@ function showProfileView(userId) {
     const adminBadge = profileUser.isAdmin ? ' 🛡️' : '';
     document.getElementById('profUsername').textContent = profileUser.username + adminBadge;
 
-    // Дата регистрации в формате ДД.ММ.ГГГГ
     const regDate = formatRegistrationDate(profileUser.createdAt);
     const profDateElem = document.getElementById('profDate');
-    profDateElem.innerHTML = `Уровень: <span style="color:var(--orange); font-weight:600;">${profileUser.level || 1}</span> | Дата регистрации: <span style="color:#e2e8f0;">${regDate}</span>`;
+    profDateElem.innerHTML = `Уровень: <span style="color:var(--accent); font-weight:600;">${profileUser.level || 1}</span> | Дата регистрации: <span style="color:#e2e8f0;">${regDate}</span>`;
 
     const statusElem = document.getElementById('profStatus');
     if (statusElem) {
         statusElem.textContent = formatTimeAgo(profileUser.lastActive);
-        statusElem.style.color = (profileUser.lastActive && Date.now() - profileUser.lastActive < 10000) ? '#23a55a' : 'var(--muted)';
+        statusElem.style.color = (profileUser.lastActive && Date.now() - profileUser.lastActive < 10000) ? '#34d399' : 'var(--muted)';
     }
 
     document.getElementById('profAvatar').innerHTML = profileUser.avatar ? `<img src="${profileUser.avatar}">` : '👤';
@@ -1184,8 +1278,8 @@ function showProfileView(userId) {
 
     if (currentUser && currentUser.isAdmin && currentUser.id !== profileUser.id) {
         adminProfActions.innerHTML = `
-            <button onclick="adminResetUserAvatar('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡️ Сбросить аватар</button>
-            <button onclick="adminResetUserBanner('${profileUser.id}')" style="background:#f23f43; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡 Сбросить баннер</button>
+            <button onclick="adminResetUserAvatar('${profileUser.id}')" style="background:#f471b5; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡️ Сбросить аватар</button>
+            <button onclick="adminResetUserBanner('${profileUser.id}')" style="background:#f471b5; border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; cursor:pointer;">🛡 Сбросить баннер</button>
         `;
         adminProfActions.style.display = 'flex';
     } else {
@@ -1293,8 +1387,8 @@ function openAuth(mode) {
     }
 
     document.getElementById('authSwitch').innerHTML = mode === 'login'
-        ? `Нет аккаунта? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('register')">Зарегистрироваться</span>`
-        : `Уже есть аккаунт? <span style="color:var(--orange); cursor:pointer;" onclick="openAuth('login')">Войти</span>`;
+        ? `Нет аккаунта? <span style="color:var(--accent); cursor:pointer;" onclick="openAuth('register')">Зарегистрироваться</span>`
+        : `Уже есть аккаунт? <span style="color:var(--accent); cursor:pointer;" onclick="openAuth('login')">Войти</span>`;
     openModal('authModal');
 }
 
@@ -1423,14 +1517,8 @@ function playTrack(index) {
         });
     });
 
-    widget.bind(SC.Widget.Events.PLAY, function() {
-        document.getElementById("play").textContent = "⏸";
-    });
-
-    widget.bind(SC.Widget.Events.PAUSE, function() {
-        document.getElementById("play").textContent = "▶";
-    });
-
+    widget.bind(SC.Widget.Events.PLAY, function() { document.getElementById("play").textContent = "⏸"; });
+    widget.bind(SC.Widget.Events.PAUSE, function() { document.getElementById("play").textContent = "▶"; });
     widget.bind(SC.Widget.Events.FINISH, function() { next(); });
 
     renderQueue();
@@ -1455,7 +1543,7 @@ function previous() {
 function changeVolume(val) {
     document.getElementById('volumeVal').textContent = val + '%';
     const bar = document.getElementById('volumeBar');
-    if (bar) bar.style.background = `linear-gradient(to right, var(--orange) ${val}%, rgba(255, 255, 255, 0.15) ${val}%)`;
+    if (bar) bar.style.background = `linear-gradient(to right, var(--accent) ${val}%, rgba(255, 255, 255, 0.08) ${val}%)`;
     if (widget) widget.setVolume(parseInt(val));
 }
 
@@ -1466,7 +1554,6 @@ function renderQueue() {
     tracks.forEach(function(track, index) {
         const item = document.createElement("div");
         item.className = "track" + (index === currentIndex ? " active" : "");
-        item.style.cssText = "margin-top:6px; padding:10px; border-radius:10px; background:#292929; cursor:pointer;";
         item.innerHTML = `
             <div style="font-size:13px;">${index + 1}. ${track.name}</div>
             <small style="color:#888; font-size:11px;">SoundCloud</small>
@@ -1500,7 +1587,9 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-// Загружаем голосовые сообщения из localStorage
+function openSystem() { openModal('systemModal'); }
+function confirmReport() { closeModal('reportModal'); showToast("Жалоба отправлена"); }
+
 try {
     const savedVoiceMsgs = localStorage.getItem('lava_voice_msgs');
     if (savedVoiceMsgs) voiceChatMessages = JSON.parse(savedVoiceMsgs);
